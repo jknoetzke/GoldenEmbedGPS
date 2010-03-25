@@ -1,0 +1,44 @@
+Change Log
+___________________________________________________________
+v1.1
+Add Wake Up on Accelerometer function
+Changed Logging to reset all variables after logging
+Added Sensor frequency setting to .H file
+Moved Sensor Reading out of interrupt routine and poll a "read_sensor" flag
+
+Fixed Bug: Previous version wouldn't read new values from the SCP, just logged the same value over and over
+Fixed Bug: Log File Header adjusted so first log is on line 2 instead of line 1
+___________________________________________________________
+v1.2
+Added Functionality: Now the device tries saving the log buffer 10 times before resetting
+
+Fixed Bug: GPS Data was being corrupted becuase UART interrupts were halted during the read sensor process
+Fixed Bug: v1.1 was creating a new files randomly after waking up from sleep
+
+Known Bug: Package Tracker will still generate new files randomly if the logging starts with this process:
+	1.) P.T. is ON
+	2.) USB is plugged in
+	3.) USB is unplugged and device starts logging data.
+This bug can be overcome by turning the device OFF before unplugging the USB cable and then turning the
+device back ON to start logging
+___________________________________________________________
+v1.3
+Added blinking status LED to indicate that the device is ON and running
+Save and Close the log files when USB is plugged in
+Improved GPS message buffering by altering the UART Rx interrupt routine
+Added error checking in the parseRMC function so that it returns 0 if the RMC message has an error in it
+Only log valid RMC messages
+Removed altitude logging
+Enhanced the GPS library to allow easier manipulation of the EM408 module
+Added NMEA Log File (RMC String Only)
+Enabled WAAS on the GPS
+___________________________________________________________
+v1.4
+Convert Sensor readings to english units before logging them
+Skip logging the sensor readings (SHT15 and SCP1000 only) if they report '0'
+Fixed ADC Overclocking
+Fixed file names to create 3 digits instead of 2
+
+___________________________________________________________
+v1.5
+Changed accelerometer from LIS302 to ADXL345
