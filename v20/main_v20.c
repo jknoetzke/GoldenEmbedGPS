@@ -45,6 +45,7 @@
 //*******************************************************
 void bootUp(void);
 void goToSleep(int duration);
+static void ISR_RxData0(void);
 static void ISR_RxData1(void);
 static void ISR_RTC(void);
 static void ISR_Timer0(void);
@@ -345,18 +346,18 @@ int main (void)
 
     //SHT15 shouldn't need to be initialized(it just needs power)
 
-    VICIntEnable |= UART1_INT | TIMER0_INT; //Enable UART1 and Timer0 Interrupts
+    VICIntEnable |= UART1_INT | UART0_INT | TIMER0_INT; //Enable UART1 and Timer0 Interrupts
     while(1){
         while(log_count < (TIMER_FREQ*60)*WAKE_MINUTES){                //After WAKE_MINUTES we will stop logging and go to sleep.
             if(gps_message_complete==1){            //If we've received a new GPS message, record it.
-                VICIntEnClr |= UART1_INT | TIMER0_INT;          //Stop the UART1 interrupts while we read the message
+                VICIntEnClr |= UART0_INT | UART1_INT | TIMER0_INT;          //Stop the UART1 interrupts while we read the message
                 for(int i=0; i<gps_message_size; i++){ //Transfer the GPS message to the final_message buffer
                     final_message[i]=gps_message[i];
                     gps_message[i]='\0';
                 }
                 final_gps_message_size=gps_message_size;
                 gps_message_complete=0;                 //Clear the message complete flag
-                VICIntEnable |= UART1_INT | TIMER0_INT;         //Re-Enable the UART0 Interrupts to get next GPS message                                
+                VICIntEnable |= UART0_INT | UART1_INT | TIMER0_INT;         //Re-Enable the UART0 Interrupts to get next GPS message                                
 
                 //Populate GPS struct with time, position, fix, date
                 //If we received a valid RMC message, log it to the NMEA file
@@ -369,11 +370,11 @@ int main (void)
 
                 //If the nmea buffer is full then log the buffer to the NMEA file
                 if(nmea_data_index >= MAX_BUFFER_SIZE){
-                    VICIntEnClr = TIMER0_INT | UART1_INT;
+                    VICIntEnClr = TIMER0_INT | UART1_INT | UART0_INT;
                     UnselectSCP();
                     saveData(&NMEA_FILE, nmea_data, nmea_data_index);
                     nmea_data_index=0;
-                    VICIntEnable = TIMER0_INT | UART1_INT;
+                    VICIntEnable = TIMER0_INT | UART1_INT | UART0_INT;
                     SelectSCP();
                     unselect_card();
                     SCPinit();
@@ -517,10 +518,10 @@ int main (void)
 
                 //Only Save Data if the buffer is full! This saves write cycles to the SD card
                 if(log_data_index >= MAX_BUFFER_SIZE){
-                    VICIntEnClr |= TIMER0_INT | UART1_INT;
+                    VICIntEnClr |= TIMER0_INT | UART1_INT | UART0_INT;
                     UnselectSCP();
                     saveData(&LOG_FILE, log_data, log_data_index);
-                    VICIntEnable |= TIMER0_INT | UART1_INT;
+                    VICIntEnable |= TIMER0_INT | UART1_INT | UART0_INT;
                     SelectSCP();
                     unselect_card();
                     SCPinit();
@@ -534,7 +535,7 @@ int main (void)
             //If a USB Cable gets plugged in, stop everything!
             if(IOPIN0 & (1<<23))
             {
-                VICIntEnClr = UART1_INT | TIMER0_INT | RTC_INT | EINT2_INT;     //Stop all running interrupts
+                VICIntEnClr = UART1_INT | TIMER0_INT | UART0_INT | RTC_INT | EINT2_INT;     //Stop all running interrupts
                 //Save current logged data and close the file before allowing USB communication
                 if ( NULL != LOG_FILE ) {
                     UnselectSCP();
@@ -631,15 +632,17 @@ void bootUp(void)
     //Setup the Interrupts
     //Enable Interrupts
     VPBDIV=1;                                                                               // Set PCLK equal to the System Clock   
-    VICIntSelect = ~(UART1_INT | TIMER0_INT | RTC_INT | EINT2_INT);
-    VICVectCntl0 = 0x20 | 7;                                                //Set up the UART0 interrupt
-    VICVectAddr0 = (unsigned int)ISR_RxData1;
-    VICVectCntl1 = 0x20 | 13;                                               //Set up the RTC interrupt
-    VICVectAddr1 = (unsigned int)ISR_RTC;   
-    VICVectCntl2 = 0x20 | 4;                                                //Timer 0 Interrupt
-    VICVectAddr2 = (unsigned int)ISR_Timer0;
-    VICVectCntl3 = 0x20 | 16;                                               //EINT2 External Interrupt 
-    VICVectAddr3 = (unsigned int)ISR_EINT2;
+    VICIntSelect = ~(UART0_INT | UART0_INT | UART1_INT | TIMER0_INT | RTC_INT | EINT2_INT);
+    VICVectCntl1 = 0x20 | 6;                                                //Set up the UART0 interrupt
+    VICVectAddr1 = (unsigned int)ISR_RxData0;
+    VICVectCntl1 = 0x20 | 7;                                                //Set up the UART0 interrupt
+    VICVectAddr1 = (unsigned int)ISR_RxData1;
+    VICVectCntl2 = 0x20 | 13;                                               //Set up the RTC interrupt
+    VICVectAddr2 = (unsigned int)ISR_RTC;   
+    VICVectCntl3 = 0x20 | 4;                                                //Timer 0 Interrupt
+    VICVectAddr3 = (unsigned int)ISR_Timer0;
+    VICVectCntl4 = 0x20 | 16;                                               //EINT2 External Interrupt 
+    VICVectAddr4 = (unsigned int)ISR_EINT2;
 
     //Setup the UART0 Interrupt
     U1IER = 0x01;                           //Enable FIFO on UART with RDA interrupt (Receive Data Available)
@@ -700,7 +703,7 @@ void goToSleep(int duration)
     CCR = (1<<0);   //Enable the RTC
 
     //Configure Interrupts
-    VICIntEnClr |= (UART1_INT | TIMER0_INT);        //Stop UART and Timer interrupts
+    VICIntEnClr |= (UART0_INT | UART1_INT | TIMER0_INT);        //Stop UART and Timer interrupts
     VICIntEnable |= (EINT2_INT | RTC_INT);  //Turn on RTC and Accel. interrupts
 
     //Read the accel once to clear any interrupts
@@ -750,7 +753,7 @@ void wakeUp(void)
     RTC_Set=0;
 
     //Enable UART0 and Timer Interrupts
-    VICIntEnable |= UART1_INT | TIMER0_INT;
+    VICIntEnable |= UART1_INT |UART0_INT | TIMER0_INT;
 }
 
 //Usage: None (Automatically Called by FW)
@@ -772,6 +775,15 @@ static void ISR_RxData1(void)
         gps_message[gps_message_index++]= val;
         gps_message_complete=0;
     }
+    VICVectAddr =0;                                         //Update the VIC priorities
+}
+
+//Usage: None (Automatically Called by FW)
+//Inputs: None
+//Description: Called when a character is received on UART0.  
+static void ISR_RxData0(void)
+{
+    char val = (char)U0RBR;
     VICVectAddr =0;                                         //Update the VIC priorities
 }
 
