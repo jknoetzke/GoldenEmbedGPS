@@ -227,7 +227,7 @@ int main (void)
                 if(scp_temp > 0){
                     if((scp_temp & (1<<13))==(1<<13))scp_temp = (~scp_temp+1);      //Get the two's compliment of the temp if negative
                     scp_temp/=2;
-                    scp_temp = (scp_temp*1.8)+320;  //Convert from Celsius to Farenheit     
+                    //scp_temp = (scp_temp*1.8)+320;  //Convert from Celsius to Farenheit     
                 }
 
                 //Get Hum. values every second (Reading SHT15 takes a long time, so we don't read it very often!)
@@ -286,7 +286,7 @@ int main (void)
                 if(new_scp_data)
 		{
                     //Log Acceleration
-                    log_data_index += (int) sprintf(log_data+log_data_index, "%d,%d,", scp_pressure, scp_temp);
+                    log_data_index += (int) sprintf(log_data+log_data_index, "%d,%d,", scp_pressure, /);
                     scp_pressure=0;
                     scp_temp=0;
                     new_scp_data=0;
@@ -324,6 +324,14 @@ int main (void)
 
                     log_data[log_data_index++]=GPS.Longitude.direction;
                     log_data[log_data_index++]=',';
+               
+                    //Log Speed
+                    for(int i=0; i<6; i++)log_data[log_data_index++]=GPS.Speed[i];
+                    log_data[log_data_index++]=',';
+
+                    log_data[log_data_index++]=GPS.Speed;
+                    log_data[log_data_index++]=',';
+ 
 
                 }
                 else for(int i=0; i<6; i++)log_data[log_data_index++]=',';
@@ -590,6 +598,9 @@ static void ISR_RxData0(void)
     ant_data[ant_data_index++]=val; 
     ant_message_complete = parseANT(val);
 
+    if(ant_message_complete)
+	ant_data[ant_data_index++] = '\n';
+
     VICVectAddr =0;                                         //Update the VIC priorities
 }
 
@@ -652,7 +663,7 @@ void createLogFile(void){
     //Get the file handle of the new file.  We will log the data to this file
     LOG_FILE = root_open_new(file_name);
     //Now that we have the file opened, let's put a label in the first row
-    fat16_write_file(LOG_FILE, (unsigned char*)"Date, UTC, X, Y, Z, Batt, Pres., SCP Temp., SHT Temp, Humidity, Fix, Lat., Lat. Dir., Long., Long. Dir.,\n", 105);
+//    fat16_write_file(LOG_FILE, (unsigned char*)"Date, UTC, X, Y, Z, Batt, Pres., SCP Temp., SHT Temp, Humidity, Fix, Lat., Lat. Dir., Long., Long. Dir.,\n", 105);
     sd_raw_sync();
 
 /*
@@ -812,8 +823,12 @@ int parseRMC(const char *gps_string){
         i++;
     }
     i++;            
-    //8th portion dismissed
-    while(gps_string[i] != ',')i++;
+    //8th portion dismissed Justin- This should be speed.
+    for(int j=0;gps_string[i] != ','; j++)
+    {
+	GPS.Speed[j]=gps_string[i];    
+        i++;
+    }
     i++;                            
     //9th portion dismissed
     while(gps_string[i] != ',')i++;
