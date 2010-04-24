@@ -492,6 +492,7 @@ clean_list :
 	$(REMOVE) $(TARGET).sym
 	$(REMOVE) $(TARGET).lnk
 	$(REMOVE) $(TARGET).lss
+	$(REMOVE) main.elf
 	$(REMOVE) $(COBJ)
 	$(REMOVE) $(CPPOBJ)
 	$(REMOVE) $(AOBJ)

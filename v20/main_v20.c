@@ -51,19 +51,17 @@ int currentChannel=0;
 int isBroadCast = FALSE;
 
 void bootUp(void);
-void goToSleep(int duration);
 static void ISR_RxData0(void);
 static void ISR_RxData1(void);
 static void ISR_RTC(void);
 static void ISR_Timer0(void);
 static void ISR_EINT2(void);
 void createLogFile(void);
-void parseGGA(const char *gps_string);
+int parseGGA(const char *gps_string);
 int parseRMC(const char *gps_string);
 void saveData(struct fat16_file_struct **fd, const char * const buf, const int buf_size);
 void itoa(int n, char s[]);
 void reverse(char s[]);
-void wakeUp(void);
 int get_adc_1(char channel);
 void reset(void);
 void initializeGps(void);
@@ -80,7 +78,7 @@ void ANTAP1_AssignNetwork(unsigned char);
 void ANTAP1_SetSearchTimeout(unsigned char);
 void ANTAP1_RequestChanID(unsigned char);
 void must_we_write(void);
-int parseANT(unsigned char chr);
+char parseANT(unsigned char chr);
 
 //*******************************************************
 //                                      Global Variables
@@ -89,8 +87,8 @@ int parseANT(unsigned char chr);
 
 //GPS variables
 char gps_message_complete=0, new_gps_data=0, RTC_Set, alarm_set,ant_message_complete=0;        //Notification Flags
-char final_message[GPS_BUFFER_SIZE], gps_message[GPS_BUFFER_SIZE];      //Buffers for holding GPS messages
-int gps_message_index=0, gps_message_size=0;    //index for copying messages to different buffers
+char final_message[GPS_BUFFER_SIZE], gps_message[GPS_BUFFER_SIZE], ant_message[GPS_BUFFER_SIZE];      //Buffers for holding GPS messages
+int gps_message_index=0, gps_message_size=0, ant_message_index=0, ant_message_size=0;    //index for copying messages to different buffers
 int final_gps_message_size=0;
 GPSdata GPS;    //GPS Struct to hold GPS coordinates.  See PackageTracker.h for Structure definition
 
@@ -116,6 +114,8 @@ struct fat16_file_struct * LOG_FILE; //File structure for current log file
 char log_data[512], log_buffer[200];//log_buffer holds data before putting it into log_data
 int log_data_index;     //Keeps track of current position in log_data
 
+char wroteGPS = FALSE;
+
 unsigned char ant_data[512];
 int ant_data_index=0;
 
@@ -138,255 +138,174 @@ int main (void)
     //*******************************************************
     //Initialize ARM I/O
     bootUp();                       //Init. I/O ports, Comm protocols and interrupts
+
+    flashBoobies(5);
+
     createLogFile();        //Create a new log file in the root of the SD card
 
-    ANTAP1_Config(); 
-    
+
     //Initialize the GPS
     initializeGps();                //Send the initialization strings
     enable_gps_rmc_msgs(1);
 
-    flashBoobies(5);
 
     //SHT15 shouldn't need to be initialized(it just needs power)
 
     VICIntEnable |= UART0_INT | UART1_INT | TIMER0_INT; //Enable UART1 and Timer0 Interrupts
     while(1)
     {
-        //while(log_count < (TIMER_FREQ*60)*WAKE_MINUTES)
-	//{                //After WAKE_MINUTES we will stop logging and go to sleep.
-            if(gps_message_complete==1)
-	    {            //If we've received a new GPS message, record it.
-                VICIntEnClr |=  UART1_INT | TIMER0_INT;          //Stop the UART1 interrupts while we read the message
-                for(int i=0; i<gps_message_size; i++){ //Transfer the GPS message to the final_message buffer
-                    final_message[i]=gps_message[i];
-                    gps_message[i]='\0';
-                }
-                final_gps_message_size=gps_message_size;
-                gps_message_complete=0;                 //Clear the message complete flag
-                VICIntEnable |=  UART1_INT | TIMER0_INT;         //Re-Enable the UART0 Interrupts to get next GPS message                                
+        if(gps_message_complete==1)
+        {            //If we've received a new GPS message, record it.
+            VICIntEnClr |=  UART1_INT | TIMER0_INT;          //Stop the UART1 interrupts while we read the message
+            for(int i=0; i<gps_message_size; i++){ //Transfer the GPS message to the final_message buffer
+                final_message[i]=gps_message[i];
+                gps_message[i]='\0';
+            }
+            final_gps_message_size=gps_message_size;
+            gps_message_complete=0;                 //Clear the message complete flag
+            VICIntEnable |=  UART1_INT | TIMER0_INT;         //Re-Enable the UART0 Interrupts to get next GPS message                                
 
-                //Populate GPS struct with time, position, fix, date
-                //If we received a valid RMC message, log it to the NMEA file
-                if(parseRMC(final_message))
-		{
-                    //If we were able to parse the entire gps message, than we have new gps data to log
-                    new_gps_data=1;
+            //Populate GPS struct with time, position, fix, date
+            //If we received a valid RMC message, log it to the NMEA file
+            if(parseRMC(final_message))
+            {
+                //If we were able to parse the entire gps message, than we have new gps data to log
+                new_gps_data=1;
 
-                    //Add the gps message to the nmea buffer
-    		/*
-		for(int i=0; i<final_gps_message_size; i++)nmea_data[nmea_data_index++]=final_message[i];
-
-                //If the nmea buffer is full then log the buffer to the NMEA file
-                if(nmea_data_index >= MAX_BUFFER_SIZE){
-
-                    VICIntEnClr = TIMER0_INT | UART1_INT;
-                    UnselectSCP();
-                    saveData(&NMEA_FILE, nmea_data, nmea_data_index);
-                    nmea_data_index=0;
-                    VICIntEnable = TIMER0_INT | UART1_INT;
-                    SelectSCP();
-                    unselect_card();
-                    SCPinit();
-                    delay_ms(10);
-                    for(int i=0; i<nmea_data_index; i++)nmea_data[i]='\0';
-                    nmea_data_index=0;
-                }
-		*/
+                //Add the gps message to the nmea buffer
                 CCR = (1<<1);   //Disable and Reset the RTC
                 HOUR = ((GPS.Time[0]-'0')*10) + (GPS.Time[1]-'0');
                 MIN = ((GPS.Time[2]-'0')*10) + (GPS.Time[3]-'0');
                 SEC = ((GPS.Time[4]-'0')*10) + (GPS.Time[5] -'0');      
                 RTC_Set=1;              //Set the RTC_Set flag since we have a valid time in the RTC registers                                  
                 CCR = (1<<0);   //Start the RTC
-	       }
             }
-/*
-            //Check to see if it's time to read the sensors
-            if(read_sensors==1)
-	    {
-                VICIntEnClr |= TIMER0_INT;
+        }
 
-                //Get Acceleration
-                acceleration_x = accelX();
-                acceleration_y = accelY();
-                acceleration_z = accelZ();
-
-                //Get Battery Voltage
-                battery_level = ((get_adc_1(0x10)*3300)/1024)*2;        //Report Battery voltage in mV. from AD1.4(P0.13)
-
-                //If the SCP1000 has new data ready, then grab it!
-                if(IOPIN0 & SCP_DRDY){
-                    unselect_card();
-                    SelectSCP();
-                    readSCP(&scp_pressure, &scp_temp);//Get temperature and pressure values from SCP1000
-                    new_scp_data=1;
-                }
-                //Convert the values of scp_pressure to Pa and scp_temp to degrees C
-                scp_pressure /=4;
-                if(scp_temp > 0){
-                    if((scp_temp & (1<<13))==(1<<13))scp_temp = (~scp_temp+1);      //Get the two's compliment of the temp if negative
-                    scp_temp/=2;
-                    //scp_temp = (scp_temp*1.8)+320;  //Convert from Celsius to Farenheit     
-                }
-
-                //Get Hum. values every second (Reading SHT15 takes a long time, so we don't read it very often!)
-                if(log_count%TIMER_FREQ==0){
-                    //Get Humidity
-                    sht15_read(&sht_temp, &sht_humidity);   //Get temp. and humidity values from SHT15 (Values are reported from sht_read function in degrees C)
-                    new_sht_data=1;
-                }
-
-                new_sensor_data=1;      //Set the flag to tell the logging routine that there is new sensor data to be saved
-                read_sensors=0;         //Reset the "read sensor" flag
-
-                VICIntEnable |= TIMER0_INT;
-            }
-*/
-            //If we have new data, lets log it!
-            //We will save the data into a CSV file that is stored on the SD card.  
-            //To create the CSV file, we'll store the data in a text array with the following format:
-            // DATE, UTC_TIME, X ACCEL, Y ACCEL, Z ACCEL, BATT. LEVEL(mV), SCP PRESSURE, SCP TEMPERATURE, SHT TEMPERATURE, SHT HUMIDITY, LATITUDE, LAT. DIRECTION, LONGITUDE, LONG. DIRECTION
-            if(new_sensor_data || new_gps_data)
-	    {                                                    
-                //Log Time
-                //If there is GPS data, use this time and date
-                if(new_gps_data && GPS.Fix=='A'){
-                    for(int i=0; i<6; i++)log_data[log_data_index++]=GPS.Date[i];
-                    log_data[log_data_index++]=',';
-                    for(int i=0; i<10; i++)log_data[log_data_index++]=GPS.Time[i];
-                }
-                //If there is not GPS data, use the RTC time
-                else{
-                    //Put a place marker for the date!
-                    log_data[log_data_index++]=',';
-                    if(RTC_Set){
-                        log_data[log_data_index++]=(HOUR / 10) + '0';
-                        log_data[log_data_index++]=(HOUR % 10) + '0';
-                        log_data[log_data_index++]=(MIN / 10) + '0';
-                        log_data[log_data_index++]=(MIN % 10) + '0';
-                        log_data[log_data_index++]=(SEC / 10) + '0';
-                        log_data[log_data_index++]=(SEC % 10) + '0';    
-                    }
-                }
-                log_data[log_data_index++]=',';
-/*
-                //Log Acceleration and Battery Values (ADC Values)
-                if(new_sensor_data){
-                    //Log Acceleration
-                    log_data_index += (int) sprintf(log_data+log_data_index, "%d,%d,%d,%d,", acceleration_x, acceleration_y, acceleration_z, battery_level);
-                    acceleration_x=0;
-                    acceleration_y=0;
-                    acceleration_z=0;
-                    battery_level=0;
-                }
-                else for(int i=0; i<4; i++)log_data[log_data_index++]=',';
-
-                //Log Pressure Values (SCP1000 Values)
-                if(new_scp_data)
-		{
-                    //Log Acceleration
-                    log_data_index += (int) sprintf(log_data+log_data_index, "%d,%d,", scp_pressure, /);
-                    scp_pressure=0;
-                    scp_temp=0;
-                    new_scp_data=0;
-                }
-                else for(int i=0; i<2; i++)log_data[log_data_index++]=',';
-
-                //Log Humidity Values (SHT15 Values)
-                if(new_sht_data)
-		{
-                    //Log Acceleration
-                    log_data_index += (int) sprintf(log_data+log_data_index, "%d,%d,", sht_temp, sht_humidity);
-                    sht_temp=0;
-                    sht_humidity=0;
-                    new_sht_data=0;
-                }
-                else for(int i=0; i<2; i++)log_data[log_data_index++]=',';                              
-*/
-                //If we have GPS data, add it to the log buffer
-                if(new_gps_data)
-		{
-                    //Log Fix Indicator
-                    log_data[log_data_index++]=GPS.Fix;
-                    log_data[log_data_index++]=',';
-
-                    //Log latitiude
-                    for(int i=0; i<9; i++)log_data[log_data_index++]=GPS.Latitude.position[i];
-                    log_data[log_data_index++]=',';
-
-                    log_data[log_data_index++]=GPS.Latitude.direction;
-                    log_data[log_data_index++]=',';
-
-                    //Log longitude
-                    for(int i=0; i<10; i++)log_data[log_data_index++]=GPS.Longitude.position[i];
-                    log_data[log_data_index++]=',';
-
-                    log_data[log_data_index++]=GPS.Longitude.direction;
-                    log_data[log_data_index++]=',';
-               
-                    //Log Speed
-                    for(int i=0; i<6; i++)log_data[log_data_index++]=GPS.Speed[i];
-                    log_data[log_data_index++]=',';
-
-                    log_data[log_data_index++]=GPS.Speed;
-                    log_data[log_data_index++]=',';
+        //int valid_gga = parseGGA(final_message);
  
-
-                }
-                else for(int i=0; i<6; i++)log_data[log_data_index++]=',';
-                log_data[log_data_index++]='\n';
-
-
-                //Only Save Data if the buffer is full! This saves write cycles to the SD card
-                if(log_data_index >= MAX_BUFFER_SIZE)
-		{
-                    VICIntEnClr |= TIMER0_INT | UART1_INT;
-                    UnselectSCP();
-                    saveData(&LOG_FILE, log_data, log_data_index);
-                    VICIntEnable |= TIMER0_INT | UART1_INT;
-                    SelectSCP();
-                    unselect_card();
-                    SCPinit();
-                    delay_ms(10);
-                    for(int i=0; i<log_data_index; i++)log_data[i]='\0';
-                    log_data_index=0;
-                }
-                new_gps_data=0; //We've saved the GPS coordinates, so clear the GPS data flag
-                new_sensor_data=0;      //We've save the accel values, so clear the accel flag
+        if(new_sensor_data || new_gps_data)
+        {                                                    
+            //Log Time
+            //If there is GPS data, use this time and date
+            if(new_gps_data && GPS.Fix=='A'){
+                for(int i=0; i<6; i++)log_data[log_data_index++]=GPS.Date[i];
+                log_data[log_data_index++]=',';
+                for(int i=0; i<10; i++)log_data[log_data_index++]=GPS.Time[i];
             }
-            //if(ant_data_index >= MAX_BUFFER_SIZE && gps_message_complete)
-            if(ant_message_complete)
-	    {
-                saveData(&LOG_FILE, (char *)ant_data, ant_data_index);
-	        ant_data_index = 0;
-	        ant_message_complete=0;
-	    }
-            //If a USB Cable gets plugged in, stop everything!
-            if(IOPIN0 & (1<<23))
+            //If there is not GPS data, use the RTC time
+            else{
+                //Put a place marker for the date!
+                log_data[log_data_index++]=',';
+                if(RTC_Set){
+                    log_data[log_data_index++]=(HOUR / 10) + '0';
+                    log_data[log_data_index++]=(HOUR % 10) + '0';
+                    log_data[log_data_index++]=(MIN / 10) + '0';
+                    log_data[log_data_index++]=(MIN % 10) + '0';
+                    log_data[log_data_index++]=(SEC / 10) + '0';
+                    log_data[log_data_index++]=(SEC % 10) + '0';    
+                }
+            }
+            log_data[log_data_index++]=',';
+            //If we have GPS data, add it to the log buffer
+            if(new_gps_data)
             {
-                VICIntEnClr = UART1_INT | TIMER0_INT | RTC_INT | EINT2_INT;     //Stop all running interrupts
-                //Save current logged data and close the file before allowing USB communication
-                if ( NULL != LOG_FILE ) {
-                    UnselectSCP();
-                    saveData(&LOG_FILE, log_data, log_data_index);
-                    fat16_close_file(LOG_FILE);
-                    log_data_index=0;
+                //Log Fix Indicator
+                log_data[log_data_index++]=GPS.Fix;
+                log_data[log_data_index++]=',';
+
+                //Log latitiude
+                for(int i=0; i<9; i++)log_data[log_data_index++]=GPS.Latitude.position[i];
+                log_data[log_data_index++]=',';
+
+                log_data[log_data_index++]=GPS.Latitude.direction;
+                log_data[log_data_index++]=',';
+
+                //Log longitude
+                for(int i=0; i<10; i++)log_data[log_data_index++]=GPS.Longitude.position[i];
+                log_data[log_data_index++]=',';
+
+                log_data[log_data_index++]=GPS.Longitude.direction;
+//                log_data[log_data_index++]=',';
+
+/*
+                //Log Speed
+                for(int i=0; i<6; i++)log_data[log_data_index++]=GPS.Speed[i];
+                log_data[log_data_index++]=',';
+                log_data[log_data_index++]=GPS.Speed;
+                //Altitude
+                if(valid_gga)
+                {
+                    log_data[log_data_index++]=',';
+                    for(int i=0; i<10; i++)log_data[log_data_index++]=GPS.Altitude[i];
+                    log_data[log_data_index++]=',';
+
+                    log_data[log_data_index++]=GPS.Altitude;
                 }
-		/*
-                if ( NULL != NMEA_FILE ) {
-                    UnselectSCP();
-                    saveData(&NMEA_FILE, nmea_data, nmea_data_index);
-                    fat16_close_file(NMEA_FILE);
-                    nmea_data_index=0;
-                } 
-                */		
-                main_msc();                                                             //Open the mass storage device
-                reset();                                                                //Reset to check for new FW
+*/  
             }
+          else for(int i=0; i<6; i++)log_data[log_data_index++]=',';
+            log_data[log_data_index++]='\n';
 
-        //}
 
+            //Only Save Data if the buffer is full! This saves write cycles to the SD card
+            if(log_data_index >= MAX_BUFFER_SIZE)
+            {
+                VICIntEnClr |= TIMER0_INT | UART1_INT;
+                UnselectSCP();
+                saveData(&LOG_FILE, log_data, log_data_index);
+                VICIntEnable |= TIMER0_INT | UART1_INT;
+                SelectSCP();
+                unselect_card();
+                SCPinit();
+                delay_ms(10);
+                for(int i=0; i<log_data_index; i++)log_data[i]='\0';
+                log_data_index=0;
+                if(wroteGPS == FALSE)
+                {
+                    ANTAP1_Config();
+                    wroteGPS = TRUE; 
+                }
+            }
+            new_gps_data=0; //We've saved the GPS coordinates, so clear the GPS data flag
+            new_sensor_data=0;      //We've save the accel values, so clear the accel flag
+        }
+
+        if(ant_message_complete == TRUE)
+        {
+            for(int i=0; i< ant_message_index; i++)
+            { 
+                ant_data[ant_message_size++]=ant_message[i];
+                ant_message[i]='\0';
+                ant_message_complete = FALSE;
+            }
+            ant_message_index=0;
+        }
+
+        if(ant_message_size >= MAX_BUFFER_SIZE)
+        {
+            saveData(&LOG_FILE, (char *)ant_data, ant_message_size);
+            for(int i=0; i<ant_message_size; i++)
+                ant_data[i]='\0';
+            ant_data_index = 0;
+            ant_message_complete=0;
+            ant_message_size=0;
+        }
+        //If a USB Cable gets plugged in, stop everything!
+        if(IOPIN0 & (1<<23))
+        {
+            VICIntEnClr = UART0_INT | UART1_INT | TIMER0_INT | RTC_INT | EINT2_INT;     //Stop all running interrupts
+            //Save current logged data and close the file before allowing USB communication
+            if ( NULL != LOG_FILE ) {
+                UnselectSCP();
+                saveData(&LOG_FILE, log_data, log_data_index);
+                saveData(&LOG_FILE, (char *)ant_data, ant_message_size);
+                fat16_close_file(LOG_FILE);
+                log_data_index=0;
+            }
+            main_msc();                                                             //Open the mass storage device
+            reset();                                                                //Reset to check for new FW
+        }
     }
     return 0;
 }
@@ -412,7 +331,7 @@ void bootUp(void)
     //Initialize UART for RPRINTF
     rprintf_devopen(putc_serial1); //Init rprintf
     init_serial1(4800);
-    
+
     init_serial0(4800);     
     delay_ms(10); //Delay for power to stablize
 
@@ -466,8 +385,8 @@ void bootUp(void)
     VICVectAddr0 = (unsigned int)ISR_RxData0;
     VICVectCntl1 = 0x20 | 13;                                               //Set up the RTC interrupt
     VICVectAddr1 = (unsigned int)ISR_RTC;   
-//    VICVectCntl2 = 0x20 | 4;                                                //Timer 0 Interrupt
-//    VICVectAddr2 = (unsigned int)ISR_Timer0;
+    //    VICVectCntl2 = 0x20 | 4;                                                //Timer 0 Interrupt
+    //    VICVectAddr2 = (unsigned int)ISR_Timer0;
     VICVectCntl3 = 0x20 | 16;                                               //EINT2 External Interrupt 
     VICVectAddr3 = (unsigned int)ISR_EINT2;
     VICVectCntl4 = 0x20 | 7;                                                //Set up the UART0 interrupt
@@ -498,108 +417,16 @@ void bootUp(void)
     PREFRAC = 1792;                         //Prescale Fraction = 60MHz - ((PREINT+1)*32768)        
 }
 
-//Usage: go_to_sleep(5);
-//Inputs: int duration - length in minutes the device should sleep for
-//This function will turn off all external components, set the
-//RTC alarme to wake up after "duration" minutes, and enter IDLE mode
-void goToSleep(int duration)
-{
-    CCR = (1<<1);   //Disable and Reset the RTC
-
-    //Save the buffered data before going to sleep
-    LED_OFF();
-    SCPoff();
-    delay_ms(10);
-
-    if(log_data_index>0){
-        saveData(&LOG_FILE, log_data, log_data_index);  
-        for(int i=0; i<log_data_index; i++)log_data[i]='\0';
-        log_data_index=0;       
-    }
-
-    //Turn Off External Peripheral Devices
-    GPSoff();
-    //Leave Acceleromter ON to generate interrupts
-    //SHT15 automatically goes to sleep after a measurement
-
-    //Set the alarm to wake up after "duration" minutes
-    SEC=0;
-    ALSEC = SEC;
-    //MIN=0;
-    //ALMIN=duration;
-    if (MIN+duration>=60) ALMIN = duration-(60-MIN);
-    else ALMIN = MIN + duration;    
-
-    sprintf(log_data, "Sleep\n");
-    saveData(&LOG_FILE, log_data, strlen(log_data));
-
-    CCR = (1<<0);   //Enable the RTC
-
-    //Configure Interrupts
-    VICIntEnClr |= (UART1_INT | TIMER0_INT);        //Stop UART and Timer interrupts
-    VICIntEnable |= (EINT2_INT | RTC_INT);  //Turn on RTC and Accel. interrupts
-
-    //Read the accel once to clear any interrupts
-    acceleration_x = accelX();
-    acceleration_y = accelY();
-    acceleration_z = accelZ();                      
-    adxl345_read(INT_SOURCE);
-
-    //Turn Off Internal Peripheral Modules in Power Control Register
-    power_register_values = PCONP; //Save the power register so we know what to load when we wake up
-    PCONP = (1<<9);         //Turn off power to all peripherals except the RTC
-    //Go to IDLE mode
-    PCON = (1<<0);                  //Go into IDLE mode
-}
-
-//Usage: wake_up();
-//Inputs: None
-//This function will turn on and initialize the peripheral sensors
-//and re-enable the UART0 interrupts
-void wakeUp(void)
-{
-    //Turn on power to ARM peripheral devices
-    PCONP |= power_register_values; //Load the saved power register values
-    VICIntEnClr |= EINT2_INT | RTC_INT;
-
-    sprintf(log_data, "Wake\n");
-    saveData(&LOG_FILE, log_data, strlen(log_data));        
-
-    //Check the ADXL345 Interrupt Source register to clear any pending interrupts
-    adxl345_read(INT_SOURCE);
-
-    //Clear program flags to 'start fresh'
-    gps_message_complete=0;
-    read_sensors=0;
-
-    //Power up and Init. the External peripheral devices
-    initializeGps();                //Send the initialization strings
-    enable_gps_rmc_msgs(1);
-    SCPon();                //Turn on the SCP sensor
-    delay_ms(10);   //Allow SCP to initialize
-    SCPinit();              //Initialize the SCP sensor
-
-    //SHT15 and ADXL345 shouldn't need to be initialized
-
-    delay_ms(1000); //Wait for GPS to stablize
-    log_count=0;    //Clear the log count
-    RTC_Set=0;
-
-    //Enable UART0 and Timer Interrupts
-    VICIntEnable |= UART0_INT | UART1_INT | TIMER0_INT;
-}
-
 //Usage: None (Automatically Called by FW)
 //Inputs: None
 //Description: Called when a character is received on UART0.  
 static void ISR_RxData0(void)
 {
     unsigned char val = (unsigned char)U0RBR;
-    ant_data[ant_data_index++]=val; 
+    ant_message[ant_message_index++] = val;
     ant_message_complete = parseANT(val);
-
-    if(ant_message_complete)
-	ant_data[ant_data_index++] = '\n';
+    if(ant_message_complete == TRUE)
+        ant_message[ant_message_index++] = '\n';
 
     VICVectAddr =0;                                         //Update the VIC priorities
 }
@@ -663,29 +490,8 @@ void createLogFile(void){
     //Get the file handle of the new file.  We will log the data to this file
     LOG_FILE = root_open_new(file_name);
     //Now that we have the file opened, let's put a label in the first row
-//    fat16_write_file(LOG_FILE, (unsigned char*)"Date, UTC, X, Y, Z, Batt, Pres., SCP Temp., SHT Temp, Humidity, Fix, Lat., Lat. Dir., Long., Long. Dir.,\n", 105);
+    //    fat16_write_file(LOG_FILE, (unsigned char*)"Date, UTC, X, Y, Z, Batt, Pres., SCP Temp., SHT Temp, Humidity, Fix, Lat., Lat. Dir., Long., Long. Dir.,\n", 105);
     sd_raw_sync();
-
-/*
-    //Create the NMEA Log File      
-    //Set an initial file name
-    sprintf(file_name, "PackageTrackerNMEA%03d.csv", file_number);
-    //Check to see if the file already exists in the root directory.
-    while(root_file_exists(file_name))
-    {
-        file_number++;  //If the file already exists, increment the file number and check again.
-        if(file_number == 250)
-        {
-            //rprintf("\nToo many files in root!\n");
-        }
-        sprintf(file_name, "PackageTrackerNMEA%03d.csv", file_number);
-    }
-    //Get the file handle of the new file.  We will log the data to this file
-    NMEA_FILE = root_open_new(file_name);
-    //Now that we have the file opened, let's put a label in the first row
-    fat16_write_file(NMEA_FILE, (const unsigned char *)NMEA_FILE_HEADER, strlen(NMEA_FILE_HEADER));
-    sd_raw_sync();  
-    */
 }
 
 //Usage: parseGGA(final_message);
@@ -693,11 +499,15 @@ void createLogFile(void){
 //This functions splits a GGA message into the
 //portions and assigns them to components of
 //a GPS structure
-void parseGGA(const char *gps_string){
+int parseGGA(const char *gps_string){
     int i=0;
     //Parse the GGA Message.  1st portion dismissed
     while(gps_string[i] != ',')i++;
     i++;
+
+    //If we didn't receive the correct SiRF header, the return an error
+    if(gps_string[0] != '$' || gps_string[1] != 'G' || gps_string[2] != 'G')return 0;
+
     //Second portion is UTC timestamp
     for(int j=0;gps_string[i] != ','; j++){
         GPS.Time[j]=gps_string[i];
@@ -826,7 +636,7 @@ int parseRMC(const char *gps_string){
     //8th portion dismissed Justin- This should be speed.
     for(int j=0;gps_string[i] != ','; j++)
     {
-	GPS.Speed[j]=gps_string[i];    
+        GPS.Speed[j]=gps_string[i];    
         i++;
     }
     i++;                            
@@ -871,7 +681,7 @@ void saveData(struct fat16_file_struct **fd, const char * const buf, const int b
         }
         //If we've tried syncing 10 times and still haven't succeeded, reset the device
         if(error==10)reset();
-        
+
         flashBoobies(1); 
     }
 }
@@ -1193,55 +1003,55 @@ void ANTAP1_OpenCh (unsigned char chan)
 
 }
 
-int parseANT(unsigned char chr)
+char parseANT(unsigned char chr)
 {
     if ((chr == MESG_TX_SYNC) && (inMsg == FALSE))
     {
-	msgN = 0; // Always reset msg count if we get a sync
-	inMsg = TRUE;
-	currentChannel=-1;
-	msgN++;
+        msgN = 0; // Always reset msg count if we get a sync
+        inMsg = TRUE;
+        currentChannel=-1;
+        msgN++;
     }
     else if (msgN == 1)
     {
-	msgN++;
-	size = chr;
+        msgN++;
+        size = chr;
     }
     else if(msgN == 2)
     {
-	if(chr == MESG_BROADCAST_DATA_ID) {
-	    isBroadCast = TRUE;
-	} else {
-	    isBroadCast = FALSE;
-	}
-	msgN++;
+        if(chr == MESG_BROADCAST_DATA_ID) {
+            isBroadCast = TRUE;
+        } else {
+            isBroadCast = FALSE;
+        }
+        msgN++;
     }
     else if (msgN == 3) {
-	currentChannel=(int) chr; // this has to be 0x00,0x01,0x02,0x03 so okay?
-	msgN++;
+        currentChannel=(int) chr; // this has to be 0x00,0x01,0x02,0x03 so okay?
+        msgN++;
     }
     else if (msgN == (size + 3)) // sync, size, checksum
     {                           
-	//Write the time.
-	inMsg = FALSE;
-	msgN = 0;
-	return 1; //We are at the end of the message
+        //Write the time.
+        inMsg = FALSE;
+        msgN = 0;
+        return TRUE; //We are at the end of the message
     }
     else if(inMsg == TRUE)
     {
-	msgN++;
+        msgN++;
     }
 
-    return 0; 
+    return FALSE; 
 }
 
 void flashBoobies(int num_of_times)
 {
-   for(int x=0; x<num_of_times;x++)
-   {
-       LED_ON();
-       delay_ms(200);
-       LED_OFF();
-       delay_ms(200);
-   }
+    for(int x=0; x<num_of_times;x++)
+    {
+        LED_ON();
+        delay_ms(100);
+        LED_OFF();
+        delay_ms(100);
+    }
 }
