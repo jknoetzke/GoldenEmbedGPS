@@ -86,7 +86,7 @@ char parseANT(unsigned char chr);
 #define NMEA_FILE_HEADER "Message ID, Time, Status, Lat., N/S, Long., E/W, Speed, Course, Date, Magnetic Var.\n"
 
 //GPS variables
-char gps_message_complete=0, new_gps_data=0, RTC_Set, alarm_set,ant_message_complete=0;        //Notification Flags
+char gps_message_complete=0, new_gps_data=0, RTC_Set=0, alarm_set,ant_message_complete=0;        //Notification Flags
 char final_message[GPS_BUFFER_SIZE], gps_message[GPS_BUFFER_SIZE], ant_message[GPS_BUFFER_SIZE];      //Buffers for holding GPS messages
 int gps_message_index=0, gps_message_size=0, ant_message_index=0, ant_message_size=0;    //index for copying messages to different buffers
 int final_gps_message_size=0;
@@ -194,10 +194,12 @@ int main (void)
                 for(int i=0; i<10; i++)log_data[log_data_index++]=GPS.Time[i];
             }
             //If there is not GPS data, use the RTC time
-            else{
+            else
+            {
                 //Put a place marker for the date!
                 log_data[log_data_index++]=',';
-                if(RTC_Set){
+                if(RTC_Set)
+                {
                     log_data[log_data_index++]=(HOUR / 10) + '0';
                     log_data[log_data_index++]=(HOUR % 10) + '0';
                     log_data[log_data_index++]=(MIN / 10) + '0';
@@ -426,8 +428,11 @@ static void ISR_RxData0(void)
     ant_message[ant_message_index++] = val;
     ant_message_complete = parseANT(val);
     if(ant_message_complete == TRUE)
+    {
+        for(int i=0; i<6; i++)
+            ant_message[ant_message_index++]=GPS.Time[i];
         ant_message[ant_message_index++] = '\n';
-
+    }
     VICVectAddr =0;                                         //Update the VIC priorities
 }
 
@@ -662,6 +667,7 @@ void saveData(struct fat16_file_struct **fd, const char * const buf, const int b
 {
     int error=0;
 
+    LED_ON();
     if((buf_size > 0) && (*fd != NULL)){
         //Try writing the data to the card up to 10 times.
         while(error<10){
@@ -681,9 +687,8 @@ void saveData(struct fat16_file_struct **fd, const char * const buf, const int b
         }
         //If we've tried syncing 10 times and still haven't succeeded, reset the device
         if(error==10)reset();
-
-        flashBoobies(1); 
     }
+    LED_OFF(); 
 }
 
 //Usage: itoa(batt_level, log_buffer)
