@@ -63,7 +63,7 @@ void bootUp(void);
 static void ISR_RxData0(void);
 static void ISR_RxData1(void);
 static void ISR_RTC(void);
-static void ISR_Timer0(void);
+//static void ISR_Timer0(void);
 static void ISR_EINT2(void);
 void createLogFile(void);
 void parseGGA(const char *gps_string);
@@ -123,7 +123,7 @@ struct fat16_file_struct * LOG_FILE; //File structure for current log file
 char log_data[512], log_buffer[200];//log_buffer holds data before putting it into log_data
 int log_data_index;     //Keeps track of current position in log_data
 
-char wroteGPS = FALSE;
+char haveLock = FALSE;
 
 //Log Parameters for logging the NMEA file
 //struct fat16_file_struct * NMEA_FILE; //File structure for current log file
@@ -158,20 +158,20 @@ int main (void)
     //SHT15 shouldn't need to be initialized(it just needs power)
 
     flashBoobies(5);
-    VICIntEnable |= UART0_INT | UART1_INT | TIMER0_INT; //Enable UART1 and Timer0 Interrupts
+    VICIntEnable |= UART0_INT | UART1_INT; // | TIMER0_INT; //Enable UART1 and Timer0 Interrupts
+      
     while(TRUE)
     {
         if(gps_message_complete==1)
         {   //If we've received a new GPS message, record it.
-            VICIntEnClr |=  UART1_INT | TIMER0_INT;          //Stop the UART1 interrupts while we read the message
+            VICIntEnClr |=  UART1_INT;          //Stop the UART1 interrupts while we read the message
             for(int i=0; i<gps_message_size; i++){ //Transfer the GPS message to the final_message buffer
                 final_message[i]=gps_message[i];
                 gps_message[i]='\0';
             }
             final_gps_message_size=gps_message_size;
             gps_message_complete=0;                 //Clear the message complete flag
-            VICIntEnable |=  UART1_INT | TIMER0_INT;         //Re-Enable the UART0 Interrupts to get next GPS message                                
-            //Populate GPS struct with time, position, fix, date
+            VICIntEnable |=  UART1_INT;         //Re-Enable the UART0 Interrupts to get next GPS message                                
             //If we received a valid RMC message, log it to the NMEA file
             if(parseRMC(final_message))
             {
@@ -186,78 +186,20 @@ int main (void)
                 RTC_Set=1; //Set the RTC_Set flag since we have a valid time in the RTC registers                                  
                 CCR = (1<<0);   //Start the RTC
             }
-        }
-
-        //int valid_gga = parseGGA(final_message);
-        
-        if(new_sensor_data || new_gps_data)
-        {                                                    
-            //Log Time
-            //If there is GPS data, use this time and date
-            if(new_gps_data && GPS.Fix=='A'){
-                for(int i=0; i<6; i++)log_data[log_data_index++]=GPS.Date[i];
-                log_data[log_data_index++]=',';
-                for(int i=0; i<10; i++)log_data[log_data_index++]=GPS.Time[i];
-            }
-            //If there is not GPS data, use the RTC time
-            else
-            {
-                //Put a place marker for the date!
-                log_data[log_data_index++]=',';
-                if(RTC_Set)
-                {
-                    log_data[log_data_index++]=(HOUR / 10) + '0';
-                    log_data[log_data_index++]=(HOUR % 10) + '0';
-                    log_data[log_data_index++]=(MIN / 10) + '0';
-                    log_data[log_data_index++]=(MIN % 10) + '0';
-                    log_data[log_data_index++]=(SEC / 10) + '0';
-                    log_data[log_data_index++]=(SEC % 10) + '0';    
-                }
-            }
-            log_data[log_data_index++]=',';
-            //If we have GPS data, add it to the log buffer
-            if(new_gps_data)
-            {
-                //Log Fix Indicator
-                log_data[log_data_index++]=GPS.Fix;
-                log_data[log_data_index++]=',';
-
-                //Log latitiude
-                for(int i=0; i<9; i++)log_data[log_data_index++]=GPS.Latitude.position[i];
-                log_data[log_data_index++]=',';
-
-                log_data[log_data_index++]=GPS.Latitude.direction;
-                log_data[log_data_index++]=',';
-
-                //Log longitude
-                for(int i=0; i<10; i++)log_data[log_data_index++]=GPS.Longitude.position[i];
-                log_data[log_data_index++]=',';
-
-                log_data[log_data_index++]=GPS.Longitude.direction;
-            }
-            else for(int i=0; i<6; i++)
-                log_data[log_data_index++]=',';
-            log_data[log_data_index++]='\n';
-
-
+ 
             //Only Save Data if the buffer is full! This saves write cycles to the SD card
             if(log_data_index >= MAX_BUFFER_SIZE)
             {
-                VICIntEnClr |= TIMER0_INT | UART1_INT;
+                VICIntEnClr |= UART1_INT;
                 UnselectSCP();
                 saveData(&LOG_FILE, log_data, log_data_index);
-                VICIntEnable |= TIMER0_INT | UART1_INT;
+                VICIntEnable |= UART1_INT;
                 SelectSCP();
                 unselect_card();
                 SCPinit();
                 delay_ms(10);
                 for(int i=0; i<log_data_index; i++)log_data[i]='\0';
                 log_data_index=0;
-                if(wroteGPS == FALSE)
-                {
-                    ANTAP1_Config();
-                    wroteGPS = TRUE; 
-                }
             }
             new_gps_data=0; //We've saved the GPS coordinates, so clear the GPS data flag
             new_sensor_data=0;      //We've save the accel values, so clear the accel flag
@@ -336,7 +278,7 @@ void bootUp(void)
     //Setup the Interrupts
     //Enable Interrupts
     VPBDIV=1;                                                                               // Set PCLK equal to the System Clock   
-    VICIntSelect = ~(UART0_INT | UART1_INT | TIMER0_INT | RTC_INT | EINT2_INT);
+    VICIntSelect = ~(UART0_INT | UART1_INT | RTC_INT | EINT2_INT);
     VICVectCntl0 = 0x20 | 6;                                                //Set up the UART1 interrupt
     VICVectAddr0 = (unsigned int)ISR_RxData0;
     VICVectCntl1 = 0x20 | 13;                                               //Set up the RTC interrupt
@@ -381,13 +323,27 @@ static void ISR_RxData0(void)
     unsigned char val = (unsigned char)U0RBR;
     ant_message[ant_message_index++] = val;
     ant_message_complete = parseANT(val); //Only throw to log_data if the message is complete
+    int i = 0;
+
+    flashBoobies(1);
+
+    /*
     if(ant_message_complete == TRUE)
     {
-        for(int i=0; i<6; i++)
-            ant_message[ant_message_index++]=GPS.Time[i];
+        //Throw in GPS data here
+      while(GPS.Latitude.position[i] != ',')
+	   ant_message[ant_message_index++]=GPS.Latitude.position[i++];
+       
+      i = 0;
+
+      while(GPS.Longitude.position[i] != ',')
+           ant_message[ant_message_index++]=GPS.Longitude.position[i++];
+       
+      for(i=0; i<6; i++)
+           ant_message[ant_message_index++]=GPS.Time[i];
         ant_message[ant_message_index++] = 0x0A;
 		
-        for(int i=0; i< ant_message_index; i++)
+        for(i=0; i< ant_message_index; i++)
         { 
             log_data[log_data_index++]=ant_message[i];
             ant_message[i]='\0';
@@ -395,7 +351,7 @@ static void ISR_RxData0(void)
         }
         ant_message_index=0;
     }
-	
+    */
     VICVectAddr =0;                                         //Update the VIC priorities
 }
 
@@ -567,6 +523,12 @@ int parseRMC(const char *gps_string){
     i++;
     if(GPS.Fix != 'A')return 0;
 
+    if(haveLock == FALSE)
+    {
+      haveLock = TRUE;
+      ANTAP1_Config();
+    }
+
     //Fourth portion is Latitude
     for(int j=0;gps_string[i] != ',';j++){
         GPS.Latitude.position[j]=gps_string[i];
@@ -698,6 +660,7 @@ void reverse(char s[])
 //This function is a global interrupt called by a match on the Timer 1 match.  The interrupt
 // is responsible for determining if a button has been pressed or if the screen has been rotated
 // and setting the appropriate global flag if either has occured.
+/*
 static void ISR_Timer0(void)
 {
     //Interrupt Code Here
@@ -713,6 +676,7 @@ static void ISR_Timer0(void)
     T0IR = 0xFF;                                            //Clear the timer interrupt
     VICVectAddr =0;                                         //Update the VIC priorities
 }
+*/
 
 //Usage: accel = get_adc_1(CHANNEL);
 //Inputs: int channel - integer corresponding to the ADC channel to be converted
@@ -744,10 +708,10 @@ void reset(void)
 {
     
     while(1)
-	{
-	    flashBoobies(1);
-		delay_ms(300);
-	}
+    {
+        flashBoobies(1);
+	delay_ms(300);
+    }
 }
 
 static void ISR_EINT2(void){
@@ -775,6 +739,7 @@ void initializeGps(void){
 
 void ANTAP1_Config (void)
 {
+    flashBoobies(2);
     ANTAP1_Reset();
     delay_ms(50);
     
