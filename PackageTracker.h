@@ -1,5 +1,5 @@
 //*******************************************************
-//		  General Definitions
+//					General Definitions
 //*******************************************************
 #define WAKE_MINUTES	5	//Number of minutes to log data before going to sleep
 #define SLEEP_MINUTES	25	//Number of minutes to stay in sleep mode
