@@ -11,7 +11,7 @@ SUBMDL   = LPC2138
 #THUMB    = -mthumb
 
 #This is needed to run IAP function call stuff
-THUMB_IW = -mthumb-interwork
+#THUMB_IW = -mthumb-interwork
 
 ## Create ROM-Image (final)
 RUN_MODE=ROM_RUN
