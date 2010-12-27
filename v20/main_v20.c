@@ -320,6 +320,9 @@ static void ISR_RxData0(void)
         for(int i = 0; i < 15; i++)
             ant_message[ant_message_index++]=GPS.Longitude.position[i];
 
+        for(int i = 0; i < 6; i++)
+            ant_message[ant_message_index++]=GPS.Speed[i];
+
         for(int i=0; i<6; i++)
             ant_message[ant_message_index++]=GPS.Date[i];
 
