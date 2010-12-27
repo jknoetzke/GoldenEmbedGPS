@@ -113,8 +113,8 @@ char new_sht_data;
 signed int acceleration_x, acceleration_y, acceleration_z;
 
 //Logging Parameters
-char file_name[32];     
-int battery_level; 
+char file_name[32];
+int battery_level;
 int log_count;  //Keeps track of how many logs we've made since we've been awake.  Get's reset before going to sleep.
 
 //Log Parameters for logging the Sensor Data
@@ -163,7 +163,7 @@ int main (void)
         if(gps_message_complete==1)
         {   //If we've received a new GPS message, record it.
             //VICIntEnClr |=  UART1_INT | TIMER0_INT;          //Stop the UART1 interrupts while we read the message
-            //VICIntEnable |=  UART1_INT | TIMER0_INT;         //Re-Enable the UART0 Interrupts to get next GPS message                                
+            //VICIntEnable |=  UART1_INT | TIMER0_INT;         //Re-Enable the UART0 Interrupts to get next GPS message
             //Populate GPS struct with time, position, fix, date
             //If we received a valid RMC message, log it to the NMEA file
             if(parseRMC(gps_message))
@@ -171,7 +171,7 @@ int main (void)
                 if(wroteGPS == FALSE)
                 {
                     ANTAP1_Config();
-                    wroteGPS = TRUE; 
+                    wroteGPS = TRUE;
                 }
             }
         }
@@ -220,7 +220,7 @@ void bootUp(void)
     rprintf_devopen(putc_serial1); //Init rprintf
     init_serial1(4800);
 
-    init_serial0(4800);     
+    init_serial0(4800);
     delay_ms(100); //Delay for power to stablize
 
     //Bring up SD and FAT
@@ -248,66 +248,66 @@ void bootUp(void)
     EXTINT |= (1<<2);               //Clear the EINT2 Interrupt bit
     EXTPOLAR |= (1<<2);     //Set EINT2 to detect rising edges
     INTWAKE |= (1<<2);              //ARM will wake up from power down on an EINT2 interrupt
-    EXTINT |= (1<<2);               //Clear the EINT2 Interrupt bit 
+    EXTINT |= (1<<2);               //Clear the EINT2 Interrupt bit
 
     //Initialize I/O Ports and Peripherals
     IODIR0 = SCLK | MOSI | SD_CS | ACCEL_CS | GPS_EN | I2C_SCL | LED;
     IODIR0 &= ~(MISO | SCP_DRDY | ACCEL_INT2 | ACCEL_INT1 | BATT_MEAS);
 
-    IODIR1 = SCP_EN | SCP_CS;       
+    IODIR1 = SCP_EN | SCP_CS;
 
     //Make sure peripheral devices are not selected
     UnselectAccelerometer();
-    UnselectSCP();  
+    UnselectSCP();
 
     //Initialize the SPI bus
     SPI0_Init();                    //Select pin functions for SPI signals.
     S0SPCCR = 64;           // SCK = 1 MHz (60MHz / 64 ~= 1Mhz)
-    S0SPCR  = 0x20;         // Master, no interrupt enable, 8 bits      
+    S0SPCR  = 0x20;         // Master, no interrupt enable, 8 bits
 
     //Setup the Interrupts
     //Enable Interrupts
-    VPBDIV=1;                                                                               // Set PCLK equal to the System Clock   
+    VPBDIV=1;                                                                               // Set PCLK equal to the System Clock
     VICIntSelect = ~(UART0_INT | UART1_INT | TIMER0_INT | RTC_INT | EINT2_INT);
     VICVectCntl0 = 0x20 | 6;                                                //Set up the UART1 interrupt
     VICVectAddr0 = (unsigned int)ISR_RxData0;
     VICVectCntl1 = 0x20 | 13;                                               //Set up the RTC interrupt
-    VICVectAddr1 = (unsigned int)ISR_RTC;   
+    VICVectAddr1 = (unsigned int)ISR_RTC;
     //    VICVectCntl2 = 0x20 | 4;                                                //Timer 0 Interrupt
     //    VICVectAddr2 = (unsigned int)ISR_Timer0;
-    VICVectCntl3 = 0x20 | 16;                                               //EINT2 External Interrupt 
+    VICVectCntl3 = 0x20 | 16;                                               //EINT2 External Interrupt
     VICVectAddr3 = (unsigned int)ISR_EINT2;
     VICVectCntl4 = 0x20 | 7;                                                //Set up the UART0 interrupt
     VICVectAddr4 = (unsigned int)ISR_RxData1;
 
     //Setup the UART1 Interrupt
     U1IER = 0x01;                           //Enable FIFO on UART with RDA interrupt (Receive Data Available)
-    U1FCR &= 0x3F;                          //Enable FIFO, set RDA interrupt for 1 character        
+    U1FCR &= 0x3F;                          //Enable FIFO, set RDA interrupt for 1 character
 
     //Setup the UART0 Interrupt
     U0IER = 0x01;                           //Enable FIFO on UART with RDA interrupt (Receive Data Available)
-    U0FCR &= 0x3F;                          //Enable FIFO, set RDA interrupt for 1 character        
+    U0FCR &= 0x3F;                          //Enable FIFO, set RDA interrupt for 1 character
 
     //Setupt the Timer0 Interrupt
     T0PR = 1200;                            //Divide Clock(60MHz) by 1200 for 50kHz PS
     T0TCR |=0X01;                           //Enable the clock
     T0CTCR=0;                                       //Timer Mode
     T0MCR=0x0003;                           //Interrupt and Reset Timer on Match
-    T0MR0=(50000/TIMER_FREQ);       //Set Interrupt frequency by dividing system clock (50KHz) by TIMER_FREQ (defined in PackageTracker.h as 10) 
+    T0MR0=(50000/TIMER_FREQ);       //Set Interrupt frequency by dividing system clock (50KHz) by TIMER_FREQ (defined in PackageTracker.h as 10)
     //Value will result in Timer 0 interrupts at TIMER_FREQ
 
     //Set up the RTC so it can be used for sleeping
     CCR = ~(1<<0);                          //use the system clock, and disable RTC for now
     CIIR = 0;                                       //Don't allow any increment interrupts
-    AMR = ~(1<<1);                          //Only check the minutes value of the alarm     
+    AMR = ~(1<<1);                          //Only check the minutes value of the alarm
     //Set up prescaler so RTC runs at 32.768 Khz
     PREINT = 1830;                          //Prescale Integer = (60MHz/32768)-1
-    PREFRAC = 1792;                         //Prescale Fraction = 60MHz - ((PREINT+1)*32768)        
+    PREFRAC = 1792;                         //Prescale Fraction = 60MHz - ((PREINT+1)*32768)
 }
 
 //Usage: None (Automatically Called by FW)
 //Inputs: None
-//Description: Called when a character is received on UART0.  
+//Description: Called when a character is received on UART0.
 static void ISR_RxData0(void)
 {
     unsigned char val = (unsigned char)U0RBR;
@@ -320,30 +320,30 @@ static void ISR_RxData0(void)
 
         for(int i = 0; i < 15; i++)
             ant_message[ant_message_index++]=GPS.Longitude.position[i];
-        
+
         for(int i=0; i<6; i++)
             ant_message[ant_message_index++]=GPS.Date[i];
 
         for(int i=0; i<10; i++)
             ant_message[ant_message_index++]=GPS.Time[i];
- 
+
         ant_message[ant_message_index++] = 0x0A;
-		
+
         for(int i=0; i< ant_message_index; i++)
-        { 
+        {
             log_data[log_data_index++]=ant_message[i];
             ant_message[i]='\0';
             ant_message_complete = FALSE;
         }
         ant_message_index=0;
     }
-	
+
     VICVectAddr =0;                                         //Update the VIC priorities
 }
 
 //Usage: None (Automatically Called by FW)
 //Inputs: None
-//Description: Called when a character is received on UART1.  
+//Description: Called when a character is received on UART1.
 static void ISR_RxData1(void)
 {
     char val = (char)U1RBR;
@@ -368,7 +368,7 @@ static void ISR_RxData1(void)
 //Description: Called when the RTC alarm goes off.  This wakes
 //                              the Package Tracker from sleep mode.
 static void ISR_RTC(void)
-{       
+{
     //Clear the Alarm Interrupt bit from the ILR
     ILR = ((1<<1)|(1<<0));
     wake_event=RTC_TIMEOUT_WAKE;
@@ -384,7 +384,7 @@ static void ISR_RTC(void)
 void createLogFile(void){
     int file_number = 0;
 
-    //Create the Sensor Data Log File       
+    //Create the Sensor Data Log File
     //Set an initial file name
     sprintf(file_name, "ANTGPS%03d.gep", file_number);
     //Check to see if the file already exists in the root directory.
@@ -428,25 +428,25 @@ void parseGGA(const char *gps_string){
         GPS.Latitude.position[j]=gps_string[i];
         i++;
     }
-    i++;                    
+    i++;
     //Fourth portion is Latitude direction
     for(int j=0;gps_string[i] != ','; j++){
         GPS.Latitude.direction=gps_string[i];
         i++;
     }
-    i++;    
+    i++;
     //Fifth portion is Long.
     for(int j=0;gps_string[i] != ','; j++){
         GPS.Longitude.position[j]=gps_string[i];
         i++;
     }
-    i++;                    
+    i++;
     //Sixth portion is Long direction
     while(gps_string[i] != ','){
         GPS.Longitude.direction=gps_string[i];
         i++;
     }
-    i++;            
+    i++;
     //Seventh portion is fix
     while(gps_string[i] != ','){
         GPS.Fix=gps_string[i];
@@ -455,15 +455,15 @@ void parseGGA(const char *gps_string){
     i++;
     //8th portion dismissed
     while(gps_string[i] != ',')i++;
-    i++;                            
+    i++;
     //8th portion dismissed
     while(gps_string[i] != ',')i++;
-    i++;                            
+    i++;
     //10th portion is Altitude
     for(int j=0;gps_string[i] != ','; j++){
         GPS.Altitude[j]=gps_string[i];
         i++;
-    }       
+    }
 }
 
 //Usage: parseRMC(final_message);
@@ -489,7 +489,7 @@ int parseRMC(const char *gps_string){
 
     //Only RMC type messages please.
     if(gps_string[0] == '$' && gps_string[1] == 'G' && gps_string[2] == 'P' && gps_string[2] == 'G')return 0;
-    
+
     //Parse the GGA Message.  1st portion dismissed
     while(gps_string[i] != ',')i++;
     i++;
@@ -508,7 +508,7 @@ int parseRMC(const char *gps_string){
     while(gps_string[i] != ','){
         GPS.Fix=gps_string[i];
         i++;
-    }       
+    }
     i++;
     if(GPS.Fix != 'A')return 0;
 
@@ -521,13 +521,13 @@ int parseRMC(const char *gps_string){
     //Make sure we received 9 characters for the Latitude
     if(character_count != 9)return 0;
     character_count=0;
-    i++;    
+    i++;
     //Fifth portion is Latitude direction
     for(int j=0;gps_string[i] != ','; j++){
         GPS.Latitude.direction=gps_string[i];
         i++;
     }
-    i++;    
+    i++;
     //Sixth portion is Long.
     for(int j=0;gps_string[i] != ','; j++){
         GPS.Longitude.position[j]=gps_string[i];
@@ -538,23 +538,23 @@ int parseRMC(const char *gps_string){
     if(character_count != 10)return 0;
     character_count=0;
 
-    i++;                    
+    i++;
     //Seventh portion is Long direction
     while(gps_string[i] != ','){
         GPS.Longitude.direction=gps_string[i];
         i++;
     }
-    i++;            
+    i++;
     //8th portion dismissed Justin- This should be speed.
     for(int j=0;gps_string[i] != ','; j++)
     {
-        GPS.Speed[j]=gps_string[i];    
+        GPS.Speed[j]=gps_string[i];
         i++;
     }
-    i++;                            
+    i++;
     //9th portion dismissed
     while(gps_string[i] != ',')i++;
-    i++;                            
+    i++;
     //10th portion is Date
     for(int j=0;gps_string[i] != ','; j++){
         GPS.Date[j]=gps_string[i];
@@ -581,7 +581,7 @@ void saveData(struct fat16_file_struct **fd, const char * const buf, const int b
         {
             if(fat16_write_file(*fd, (const unsigned char*)buf, buf_size) < 0)
                 error++;
-            else 
+            else
                 break;
             delay_ms(100);
         }
@@ -640,7 +640,7 @@ void reverse(char s[])
 //Usage: accel = get_adc_1(CHANNEL);
 //Inputs: int channel - integer corresponding to the ADC channel to be converted
 //Outputs: None
-//Description: Returns the raw analog to digital conversion of the input channel.  
+//Description: Returns the raw analog to digital conversion of the input channel.
 int get_adc_1(char channel)
 {
     int val;
@@ -665,7 +665,7 @@ int get_adc_1(char channel)
 //Description: Resets the LPC2148
 void reset(void)
 {
-    
+
     while(1)
 	{
 	    flashBoobies(1);
@@ -701,7 +701,7 @@ void ANTAP1_Config (void)
     flashBoobies(2);
     ANTAP1_Reset();
     delay_ms(50);
-    
+
     //HR
     ANTAP1_AssignCh(0x00);
     delay_ms(50);
@@ -721,7 +721,7 @@ void ANTAP1_Config (void)
     //Power
     ANTAP1_AssignCh(0x01);
     delay_ms(50);
-    ANTAP1_SetChId(0x01,DEVTYPE_PWR, CINQO); 
+    ANTAP1_SetChId(0x01,DEVTYPE_PWR, CINQO);
     delay_ms(50);
     ANTAP1_AssignNetwork(0x01);
     delay_ms(50);
@@ -746,25 +746,25 @@ void ANTAP1_SetSearchTimeout(unsigned char chan)
     setup[3] = chan; // Channel
     setup[4] = 0x1e;
     setup[5] = (0xa4^0x02^0x44^chan^0x1e);  // Checksum
-    
+
     for(i = 0 ; i < 6 ; i++)
        putc_serial0(setup[i]);
-   
+
 }
 
 
 // Resets module
-void ANTAP1_Reset (void) 
+void ANTAP1_Reset (void)
 {
     unsigned char i;
     unsigned char setup[5];
-    
+
     setup[0] = 0xa4; // SYNC Byte
     setup[1] = 0x01; // LENGTH Byte
     setup[2] = 0x4a; // ID Byte
     setup[3] = 0x00; // Data Byte N (N=LENGTH)
     setup[4] = 0xef; // Checksum
-    
+
     for(i = 0 ; i < 5 ; i++)
        putc_serial0(setup[i]);
 }
@@ -777,28 +777,28 @@ void ANTAP1_AssignNetwork(unsigned char chan)
     setup[0] = 0xa4; //Sync
     setup[1] = 0x09; //Length
     setup[2] = MESG_NETWORK_KEY_ID;
-    setup[3] = chan; //chan 
+    setup[3] = chan; //chan
     setup[4] = 0xb9;
-    setup[5] = 0xa5;     
-    setup[6] = 0x21;    
-    setup[7] = 0xfb; 
-    setup[8] = 0xbd; 
-    setup[9] = 0x72; 
-    setup[10] = 0xc3; 
-    setup[11] = 0x45; 
+    setup[5] = 0xa5;
+    setup[6] = 0x21;
+    setup[7] = 0xfb;
+    setup[8] = 0xbd;
+    setup[9] = 0x72;
+    setup[10] = 0xc3;
+    setup[11] = 0x45;
     setup[12] = (0xa4^0x09^MESG_NETWORK_KEY_ID^chan^0xb9^0xa5^0x21^0xfb^0xbd^0x72^0xc3^0x45);
-    
+
     for(i = 0 ; i < 13 ; i++)
       putc_serial0(setup[i]);
 }
 
 
 // Assigns CH=0, CH Type=00(RX), Net#=0
-void ANTAP1_AssignCh (unsigned char chan) 
+void ANTAP1_AssignCh (unsigned char chan)
 {
     unsigned char i;
     unsigned char setup[7];
-   
+
     setup[0] = 0xa4;
     setup[1] = 0x03;
     setup[2] = 0x42;
@@ -806,46 +806,46 @@ void ANTAP1_AssignCh (unsigned char chan)
     setup[4] = chanType;    // ChanType
     setup[5] = netNum;        // NetNum
     setup[6] = (0xa4^0x03^0x42^chan^chanType^netNum);
-    
+
     for(i = 0 ; i < 7 ; i++)
       putc_serial0(setup[i]);
 }
 
-void ANTAP1_SetChRFFreq (unsigned char chan) 
+void ANTAP1_SetChRFFreq (unsigned char chan)
 {
     unsigned char i;
     unsigned char setup[6];
-   
+
     setup[0] = 0xa4;
     setup[1] = 0x02;
     setup[2] = 0x45;
     setup[3] = chan;        // ChanNum
     setup[4] = 0x39;        // RF Freq
     setup[5] = (0xa4^0x02^0x45^chan^0x39);
-    
+
     for(i = 0 ; i < 6 ; i++)
         putc_serial0(setup[i]);
 
 }
 
 // Assigns CH=0, RF Freq
-void ANTAP1_RequestChanID(unsigned char chan) 
+void ANTAP1_RequestChanID(unsigned char chan)
 {
     unsigned char i;
     unsigned char setup[6];
-    
+
     setup[0] = 0xa4;
     setup[1] = 0x02;
     setup[2] = 0x4d;
     setup[3] = chan;        // ChanNum
     setup[4] = 0x51;        //Extra Info
     setup[5] = (0xa4^0x02^0x4d^chan^0x51);
-    
+
     for(i = 0 ; i < 6 ; i++)
         putc_serial0(setup[i]);
 }
 
-void ANTAP1_SetChPeriod (unsigned char chan, unsigned char device) 
+void ANTAP1_SetChPeriod (unsigned char chan, unsigned char device)
 {
     unsigned char i;
     unsigned char setup[7];
@@ -857,18 +857,18 @@ void ANTAP1_SetChPeriod (unsigned char chan, unsigned char device)
     setup[4] = device;
     setup[5] = 0x1f;
     setup[6] = (0xa4^0x03^0x43^chan^device^0x1f);
-    
+
     for(i = 0 ; i < 7 ; i++)
         putc_serial0(setup[i]);
-  
+
 }
 
 // Assigns Device#=0000 (wildcard), Device Type ID=00 (wildcard), Trans Type=00 (wildcard)
-void ANTAP1_SetChId (unsigned char chan, unsigned char deviceType, unsigned char deviceNum[]) 
+void ANTAP1_SetChId (unsigned char chan, unsigned char deviceType, unsigned char deviceNum[])
 {
     unsigned char i;
     unsigned char setup[9];
-    
+
     setup[0] = 0xa4;
     setup[1] = 0x05;
     setup[2] = 0x51;
@@ -878,23 +878,23 @@ void ANTAP1_SetChId (unsigned char chan, unsigned char deviceType, unsigned char
     setup[6] = deviceType;
     setup[7] = 0x00;
     setup[8] = (0xa4^0x05^0x51^chan^deviceNum[0]^deviceNum[1]^deviceType^0x00);
-    
+
     for(i = 0 ; i < 9 ; i++)
        putc_serial0(setup[i]);
 }
 
 // Opens CH 0
-void ANTAP1_OpenCh (unsigned char chan) 
+void ANTAP1_OpenCh (unsigned char chan)
 {
     unsigned char i;
     unsigned char setup[5];
-    
+
     setup[0] = 0xa4;
     setup[1] = 0x01;
     setup[2] = 0x4b;
     setup[3] = chan;
     setup[4] = (0xa4^0x01^0x4b^chan);
-    
+
     for(i = 0 ; i < 5 ; i++)
       putc_serial0(setup[i]);
 
@@ -914,24 +914,24 @@ char parseANT(unsigned char chr)
     }
     else if(msgN == 2)
     {
-        if(chr == MESG_BROADCAST_DATA_ID) 
+        if(chr == MESG_BROADCAST_DATA_ID)
         {
             isBroadCast = TRUE;
-        } 
-        else 
+        }
+        else
         {
             isBroadCast = FALSE;
         }
         msgN++;
     }
-    else if (msgN == 3) 
+    else if (msgN == 3)
     {
         currentChannel=(int) chr; // this has to be 0x00,0x01,0x02,0x03 so okay?
         msgN++;
     }
     else if (msgN == (size + 3)) // sync, size, checksum
-    {   
-        inMsg = FALSE;                        
+    {
+        inMsg = FALSE;
         return TRUE; //We are at the end of the message
     }
     else if(inMsg == TRUE)
@@ -939,7 +939,7 @@ char parseANT(unsigned char chr)
         msgN++;
     }
 
-    return FALSE; 
+    return FALSE;
 }
 
 void flashBoobies(int num_of_times)
