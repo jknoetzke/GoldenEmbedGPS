@@ -137,9 +137,8 @@ char read_sensors, new_sensor_data;                     //Global flag indicating
 char wake_event=0;
 
 //JFK ID's
-unsigned char HRM[2] = { 0x89, 0x43 };
-//unsigned char CINQO[2] = { 0x55, 0x05};
-unsigned char CINQO[2] = { 0xf1, 0x2d};
+unsigned char HRM[2] = { 0x00, 0x00 };
+unsigned char CINQO[2] = { 0x00, 0x00};
 
 int main (void)
 {
