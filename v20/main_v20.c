@@ -1,5 +1,5 @@
 //*******************************************************
-//                                      Package Tracker Firmware
+//                 Package Tracker Firmware
 //*******************************************************
 #include <stdio.h>
 #include <string.h>
@@ -65,7 +65,6 @@ static void ISR_RxData1(void);
 static void ISR_RTC(void);
 static void ISR_EINT2(void);
 void createLogFile(void);
-void parseGGA(const char *gps_string);
 int parseRMC(const char *gps_string);
 void saveData(struct fat16_file_struct **fd, const char * const buf, const int buf_size);
 void itoa(int n, char s[]);
@@ -98,7 +97,7 @@ char gps_message_complete=0, new_gps_data=0, RTC_Set=0, alarm_set,ant_message_co
 char gps_message[GPS_BUFFER_SIZE], ant_message[GPS_BUFFER_SIZE];      //Buffers for holding GPS messages
 int gps_message_index=0, gps_message_size=0, ant_message_index=0, ant_message_size=0;    //index for copying messages to different buffers
 int final_gps_message_size=0;
-GPSdata GPS;    //GPS Struct to hold GPS coordinates.  See PackageTracker.h for Structure definition
+GPSdata GPS, safeGPS;    //GPS Struct to hold GPS coordinates.  See PackageTracker.h for Structure definition
 
 //Pressure Sensor (SCP100) Values
 unsigned int scp_pressure;
@@ -137,8 +136,11 @@ char read_sensors, new_sensor_data;                     //Global flag indicating
 char wake_event=0;
 
 //JFK ID's
+//unsigned char HRM[2] = { 0x89, 0x43 };
+//unsigned char CINQO[2] = { 0xf1, 0x2d};
 unsigned char HRM[2] = { 0x00, 0x00 };
 unsigned char CINQO[2] = { 0x00, 0x00};
+
 
 int main (void)
 {
@@ -161,28 +163,61 @@ int main (void)
     {
         if(gps_message_complete==1)
         {   //If we've received a new GPS message, record it.
-            //VICIntEnClr |=  UART1_INT | TIMER0_INT;          //Stop the UART1 interrupts while we read the message
-            //VICIntEnable |=  UART1_INT | TIMER0_INT;         //Re-Enable the UART0 Interrupts to get next GPS message
             //Populate GPS struct with time, position, fix, date
             //If we received a valid RMC message, log it to the NMEA file
+            VICIntEnClr |= UART1_INT;
             if(parseRMC(gps_message))
             {
+                //printDebug(gps_message, gps_message_size);        
+                //Copy over into safeGPS, the data is valid.
+                for(int i = 0; i < 9; i++)
+                    safeGPS.Latitude.position[i] = GPS.Latitude.position[i];
+
+                for(int i = 0; i < 9; i++)
+                    safeGPS.Longitude.position[i] = GPS.Longitude.position[i];
+
+                for(int i = 0; i < 4; i++)
+                    safeGPS.Speed[i] = GPS.Speed[i];
+
+                for(int i=0; i<6; i++)
+                    safeGPS.Date[i] = GPS.Date[i];
+
+                for(int i=0; i<10; i++)
+                    safeGPS.Time[i] = GPS.Time[i];
+
+                //printDebug("GPS Time: ",10);
+                //printDebug(safeGPS.Time, 10);
+                //printDebug('\n', 1);
+
                 if(wroteGPS == FALSE)
                 {
                     ANTAP1_Config();
                     wroteGPS = TRUE;
                 }
             }
+            VICIntEnable |= UART1_INT;
+
+        }
+        if(ant_message_complete == TRUE)
+        {
+            VICIntEnClr |= UART0_INT;
+            for(int i=0; i< ant_message_index; i++)
+            {
+                log_data[log_data_index++]=ant_message[i];
+                ant_message[i]='\0';
+                ant_message_complete = FALSE;
+            }
+            ant_message_index=0;
+
+            VICIntEnable |= UART0_INT;
         }
 
         //Only Save Data if the buffer is full! This saves write cycles to the SD card
         if(log_data_index >= MAX_BUFFER_SIZE)
         {
-            //VICIntEnClr |= TIMER0_INT | UART1_INT;
             VICIntEnClr |= UART0_INT | UART1_INT;
             UnselectSCP();
             saveData(&LOG_FILE, log_data, log_data_index);
-            //VICIntEnable |= TIMER0_INT | UART1_INT;
             VICIntEnable |= UART0_INT | UART1_INT;
             SelectSCP();
             unselect_card();
@@ -313,33 +348,24 @@ static void ISR_RxData0(void)
     ant_message[ant_message_index++] = val;
     ant_message_complete = parseANT(val); //Only throw to log_data if the message is complete
     if(ant_message_complete == TRUE)
-    {
-        for(int i = 0; i < 15; i++)
-            ant_message[ant_message_index++]=GPS.Latitude.position[i];
+    { 
+        for(int i = 0; i < 9; i++)
+            ant_message[ant_message_index++]=safeGPS.Latitude.position[i];
 
-        for(int i = 0; i < 15; i++)
-            ant_message[ant_message_index++]=GPS.Longitude.position[i];
+        for(int i = 0; i < 9; i++)
+            ant_message[ant_message_index++]=safeGPS.Longitude.position[i];
 
-        for(int i = 0; i < 6; i++)
-            ant_message[ant_message_index++]=GPS.Speed[i];
+        for(int i = 0; i < 4; i++)
+            ant_message[ant_message_index++]=safeGPS.Speed[i];
 
         for(int i=0; i<6; i++)
-            ant_message[ant_message_index++]=GPS.Date[i];
+            ant_message[ant_message_index++]=safeGPS.Date[i];
 
         for(int i=0; i<10; i++)
-            ant_message[ant_message_index++]=GPS.Time[i];
+            ant_message[ant_message_index++]=safeGPS.Time[i];
 
         ant_message[ant_message_index++] = 0x0A;
-
-        for(int i=0; i< ant_message_index; i++)
-        {
-            log_data[log_data_index++]=ant_message[i];
-            ant_message[i]='\0';
-            ant_message_complete = FALSE;
-        }
-        ant_message_index=0;
     }
-
     VICVectAddr =0;                                         //Update the VIC priorities
 }
 
@@ -349,6 +375,7 @@ static void ISR_RxData0(void)
 static void ISR_RxData1(void)
 {
     char val = (char)U1RBR;
+    
     //When we get a character on UART1, save it to the GPS message buffer
     if(val=='\n'){  //Newline means the current message is complete
         gps_message[gps_message_index]= val;
@@ -404,76 +431,9 @@ void createLogFile(void){
     sd_raw_sync();
 }
 
-//Usage: parseGGA(final_message);
-//Inputs: const char *gps_string - GGA NMEA string
-//This functions splits a GGA message into the
-//portions and assigns them to components of
-//a GPS structure
-void parseGGA(const char *gps_string){
-    int i=0;
-    //Parse the GGA Message.  1st portion dismissed
-    while(gps_string[i] != ',')i++;
-    i++;
-
-    //If we didn't receive the correct SiRF header, the return an error
-    if(gps_string[0] != '$' || gps_string[1] != 'G' || gps_string[2] != 'G')
-        return;
-
-    //Second portion is UTC timestamp
-    for(int j=0;gps_string[i] != ','; j++){
-        GPS.Time[j]=gps_string[i];
-        i++;
-    }
-    i++;
-    //Third portion is Latitude
-    for(int j=0;gps_string[i] != ',';j++){
-        GPS.Latitude.position[j]=gps_string[i];
-        i++;
-    }
-    i++;
-    //Fourth portion is Latitude direction
-    for(int j=0;gps_string[i] != ','; j++){
-        GPS.Latitude.direction=gps_string[i];
-        i++;
-    }
-    i++;
-    //Fifth portion is Long.
-    for(int j=0;gps_string[i] != ','; j++){
-        GPS.Longitude.position[j]=gps_string[i];
-        i++;
-    }
-    i++;
-    //Sixth portion is Long direction
-    while(gps_string[i] != ','){
-        GPS.Longitude.direction=gps_string[i];
-        i++;
-    }
-    i++;
-    //Seventh portion is fix
-    while(gps_string[i] != ','){
-        GPS.Fix=gps_string[i];
-        i++;
-    }
-    i++;
-    //8th portion dismissed
-    while(gps_string[i] != ',')i++;
-    i++;
-    //8th portion dismissed
-    while(gps_string[i] != ',')i++;
-    i++;
-    //10th portion is Altitude
-    for(int j=0;gps_string[i] != ','; j++){
-        GPS.Altitude[j]=gps_string[i];
-        i++;
-    }
-}
-
 //Usage: parseRMC(final_message);
 //Inputs: const char *gps_string - RMC NMEA string
 //This functions splits a GGA message into the
-//portions and assigns them to components of
-//a GPS structure
-//This functions splits a RMC message into the
 //portions and assigns them to components of
 //a GPS structure
 int parseRMC(const char *gps_string){
@@ -547,7 +507,7 @@ int parseRMC(const char *gps_string){
         i++;
     }
     i++;
-    //8th portion dismissed Justin- This should be speed.
+    //8th portion Speed.
     for(int j=0;gps_string[i] != ','; j++)
     {
         GPS.Speed[j]=gps_string[i];
@@ -591,7 +551,7 @@ void saveData(struct fat16_file_struct **fd, const char * const buf, const int b
         if(error==10)
         {
             reset();
-         }
+        }
         error=0;
         //Try syncing the card up to 10 times
         while(error<10){
@@ -669,10 +629,10 @@ void reset(void)
 {
 
     while(1)
-	{
-	    flashBoobies(1);
-		delay_ms(100);
-	}
+    {
+        flashBoobies(1);
+        delay_ms(100);
+    }
 }
 
 static void ISR_EINT2(void){
@@ -750,7 +710,7 @@ void ANTAP1_SetSearchTimeout(unsigned char chan)
     setup[5] = (0xa4^0x02^0x44^chan^0x1e);  // Checksum
 
     for(i = 0 ; i < 6 ; i++)
-       putc_serial0(setup[i]);
+        putc_serial0(setup[i]);
 
 }
 
@@ -768,7 +728,7 @@ void ANTAP1_Reset (void)
     setup[4] = 0xef; // Checksum
 
     for(i = 0 ; i < 5 ; i++)
-       putc_serial0(setup[i]);
+        putc_serial0(setup[i]);
 }
 
 void ANTAP1_AssignNetwork(unsigned char chan)
@@ -791,7 +751,7 @@ void ANTAP1_AssignNetwork(unsigned char chan)
     setup[12] = (0xa4^0x09^MESG_NETWORK_KEY_ID^chan^0xb9^0xa5^0x21^0xfb^0xbd^0x72^0xc3^0x45);
 
     for(i = 0 ; i < 13 ; i++)
-      putc_serial0(setup[i]);
+        putc_serial0(setup[i]);
 }
 
 
@@ -810,7 +770,7 @@ void ANTAP1_AssignCh (unsigned char chan)
     setup[6] = (0xa4^0x03^0x42^chan^chanType^netNum);
 
     for(i = 0 ; i < 7 ; i++)
-      putc_serial0(setup[i]);
+        putc_serial0(setup[i]);
 }
 
 void ANTAP1_SetChRFFreq (unsigned char chan)
@@ -882,7 +842,7 @@ void ANTAP1_SetChId (unsigned char chan, unsigned char deviceType, unsigned char
     setup[8] = (0xa4^0x05^0x51^chan^deviceNum[0]^deviceNum[1]^deviceType^0x00);
 
     for(i = 0 ; i < 9 ; i++)
-       putc_serial0(setup[i]);
+        putc_serial0(setup[i]);
 }
 
 // Opens CH 0
@@ -898,7 +858,7 @@ void ANTAP1_OpenCh (unsigned char chan)
     setup[4] = (0xa4^0x01^0x4b^chan);
 
     for(i = 0 ; i < 5 ; i++)
-      putc_serial0(setup[i]);
+        putc_serial0(setup[i]);
 
 }
 char parseANT(unsigned char chr)
