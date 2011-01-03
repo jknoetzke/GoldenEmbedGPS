@@ -63,7 +63,7 @@ void bootUp(void);
 static void ISR_RxData0(void);
 static void ISR_RxData1(void);
 //static void ISR_RTC(void);
-static void ISR_EINT2(void);
+//static void ISR_EINT2(void);
 void createLogFile(void);
 int parseRMC(const char *gps_string);
 void saveData(struct fat16_file_struct **fd, const char * const buf, const int buf_size);
@@ -158,8 +158,9 @@ int main (void)
 
     //SHT15 shouldn't need to be initialized(it just needs power)
 
-    VICIntEnable |=  UART1_INT | TIMER0_INT; //Enable UART1 and Timer0 Interrupts
+    VICIntEnable |=  UART1_INT;// | TIMER0_INT; //Enable UART1 and Timer0 Interrupts
     flashBoobies(5);
+
     while(TRUE)
     {
         if(gps_message_complete==1)
@@ -167,10 +168,12 @@ int main (void)
             //Populate GPS struct with time, position, fix, date
             //If we received a valid RMC message, log it to the NMEA file
             //printDebug(gps_message, gps_message_size);
-  	    VICIntEnClr |= TIMER0_INT | UART1_INT;
+  	    //VICIntEnClr |= TIMER0_INT | UART1_INT;
+  	    VICIntEnClr |= UART1_INT;
 	    if(parseRMC(gps_message))
             {
-                //Copy over into safeGPS, the data is valid.
+                printDebug(gps_message, gps_message_size);
+		 //Copy over into safeGPS, the data is valid.
                 for(int i = 0; i < 9; i++)
                     safeGPS.Latitude.position[i] = GPS.Latitude.position[i];
 
@@ -194,12 +197,14 @@ int main (void)
                     wroteGPS = TRUE;
                 }
             }
-            VICIntEnable |= TIMER0_INT | UART1_INT;
+            //VICIntEnable |= TIMER0_INT | UART1_INT;
+            VICIntEnable |= UART1_INT;
         }
 
         if(ant_message_complete == TRUE)
         {
-            VICIntEnClr |= TIMER0_INT | UART0_INT | UART1_INT;
+            //VICIntEnClr |= TIMER0_INT | UART0_INT | UART1_INT;
+            VICIntEnClr |= UART0_INT | UART1_INT;
             for(int i=0; i< ant_message_index; i++)
             {
                 log_data[log_data_index++]=ant_message[i];
@@ -208,16 +213,19 @@ int main (void)
             }
             ant_message_index=0;
 
-            VICIntEnable |= TIMER0_INT | UART0_INT | UART1_INT;
+            //VICIntEnable |= TIMER0_INT | UART0_INT | UART1_INT;
+            VICIntEnable |= UART0_INT | UART1_INT;
         }
 
         //Only Save Data if the buffer is full! This saves write cycles to the SD card
         if(log_data_index >= MAX_BUFFER_SIZE)
         {
-            VICIntEnClr |= TIMER0_INT | UART0_INT | UART1_INT;
+            //VICIntEnClr |= TIMER0_INT | UART0_INT | UART1_INT;
+            VICIntEnClr |= UART0_INT | UART1_INT;
             UnselectSCP();
             saveData(&LOG_FILE, log_data, log_data_index);
-            VICIntEnable |= TIMER0_INT | UART0_INT | UART1_INT;
+            //VICIntEnable |= TIMER0_INT | UART0_INT | UART1_INT;
+            VICIntEnable |= UART0_INT | UART1_INT;
             SelectSCP();
             unselect_card();
             SCPinit();
@@ -274,6 +282,8 @@ void bootUp(void)
     //Set up the EINT2 External Interrupt Functionality
     PINSEL0 &= ~(3<<30);    //Clear P0.15 special function
     PINSEL0 |= (2<<30);     //Set P0.15 to EINT2
+    
+    /*
     VICIntEnClr |= EINT2_INT;//Make sure EINT2 interrupts are disabled
     EXTINT |= (1<<2);               //Clear the EINT2 Interrupt bit
     EXTMODE |= (1<<2);              //Set EINT2 to be edge sensitive
@@ -281,7 +291,8 @@ void bootUp(void)
     EXTPOLAR |= (1<<2);     //Set EINT2 to detect rising edges
     INTWAKE |= (1<<2);              //ARM will wake up from power down on an EINT2 interrupt
     EXTINT |= (1<<2);               //Clear the EINT2 Interrupt bit
-
+    */
+    
     //Initialize I/O Ports and Peripherals
     IODIR0 = SCLK | MOSI | SD_CS | ACCEL_CS | GPS_EN | I2C_SCL | LED;
     IODIR0 &= ~(MISO | SCP_DRDY | ACCEL_INT2 | ACCEL_INT1 | BATT_MEAS);
@@ -300,15 +311,16 @@ void bootUp(void)
     //Setup the Interrupts
     //Enable Interrupts
     VPBDIV=1;                                                                               // Set PCLK equal to the System Clock
-    VICIntSelect = ~(UART0_INT | UART1_INT | TIMER0_INT | RTC_INT | EINT2_INT);
+    //VICIntSelect = ~(UART0_INT | UART1_INT | TIMER0_INT | RTC_INT | EINT2_INT);
+    VICIntSelect = ~(UART0_INT | UART1_INT);
     VICVectCntl0 = 0x20 | 6;                                                //Set up the UART1 interrupt
     VICVectAddr0 = (unsigned int)ISR_RxData0;
     VICVectCntl1 = 0x20 | 13;                                               //Set up the RTC interrupt
     //VICVectAddr1 = (unsigned int)ISR_RTC;
     //    VICVectCntl2 = 0x20 | 4;                                                //Timer 0 Interrupt
     //    VICVectAddr2 = (unsigned int)ISR_Timer0;
-    VICVectCntl3 = 0x20 | 16;                                               //EINT2 External Interrupt
-    VICVectAddr3 = (unsigned int)ISR_EINT2;
+    //VICVectCntl3 = 0x20 | 16;                                               //EINT2 External Interrupt
+    //VICVectAddr3 = (unsigned int)ISR_EINT2;
     VICVectCntl4 = 0x20 | 7;                                                //Set up the UART0 interrupt
     VICVectAddr4 = (unsigned int)ISR_RxData1;
 
@@ -331,9 +343,11 @@ void bootUp(void)
     //Value will result in Timer 0 interrupts at TIMER_FREQ
 
     //Set up the RTC so it can be used for sleeping
+    /*
     CCR = ~(1<<0);                          //use the system clock, and disable RTC for now
     CIIR = 0;                                       //Don't allow any increment interrupts
     AMR = ~(1<<1);                          //Only check the minutes value of the alarm
+    */
     //Set up prescaler so RTC runs at 32.768 Khz
     PREINT = 1830;                          //Prescale Integer = (60MHz/32768)-1
     PREFRAC = 1792;                         //Prescale Fraction = 60MHz - ((PREINT+1)*32768)
@@ -423,9 +437,10 @@ void createLogFile(void){
     while(root_file_exists(file_name))
     {
         file_number++;  //If the file already exists, increment the file number and check again.
-        if(file_number == 25)
+        if(file_number == 1)
         {
-            //rprintf("\nToo many files in root!\n");
+            printDebug("\nReset!!",8);
+	    reset();
         }
         sprintf(file_name, "ANTGPS%03d.gep", file_number);
     }
@@ -638,6 +653,7 @@ void reset(void)
     }
 }
 
+/*
 static void ISR_EINT2(void){
     VICIntEnClr = (1<<16);                  //Temporarily disable EINT2 Interrupts
     EXTINT |= (1<<2);                               //Clear the interrupt bit in EINT2
@@ -647,6 +663,7 @@ static void ISR_EINT2(void){
     VICIntEnable = (1<<16);         //Re-enable the EINT2 Interrupts
     VICVectAddr =0;         //Update the VIC priorities
 }
+*/
 
 void initializeGps(void){
     //Initialize the GPS receiver
