@@ -62,7 +62,7 @@ int isBroadCast = FALSE;
 void bootUp(void);
 static void ISR_RxData0(void);
 static void ISR_RxData1(void);
-static void ISR_RTC(void);
+//static void ISR_RTC(void);
 static void ISR_EINT2(void);
 void createLogFile(void);
 int parseRMC(const char *gps_string);
@@ -93,8 +93,9 @@ void printDebug(char *debug, int _size);
 //*******************************************************
 
 //GPS variables
-char gps_message_complete=0, new_gps_data=0, RTC_Set=0, alarm_set,ant_message_complete=0;        //Notification Flags
-char gps_message[GPS_BUFFER_SIZE], ant_message[GPS_BUFFER_SIZE];      //Buffers for holding GPS messages
+char gps_message_complete=0, new_gps_data=0, RTC_Set=0, alarm_set,ant_message_complete=FALSE;        //Notification Flags
+char gps_message[GPS_BUFFER_SIZE]; 
+unsigned char ant_message[GPS_BUFFER_SIZE];      //Buffers for holding GPS messages
 int gps_message_index=0, gps_message_size=0, ant_message_index=0, ant_message_size=0;    //index for copying messages to different buffers
 int final_gps_message_size=0;
 GPSdata GPS, safeGPS;    //GPS Struct to hold GPS coordinates.  See PackageTracker.h for Structure definition
@@ -119,7 +120,7 @@ int log_count;  //Keeps track of how many logs we've made since we've been awake
 //Log Parameters for logging the Sensor Data
 struct fat16_file_struct * LOG_FILE; //File structure for current log file
 char log_data[1024];//log_buffer holds data before putting it into log_data
-int log_data_index;     //Keeps track of current position in log_data
+int log_data_index = 0;     //Keeps track of current position in log_data
 
 char wroteGPS = FALSE;
 
@@ -132,14 +133,14 @@ char led_blink=0;
 
 //Sleep Parameters
 unsigned int power_register_values;                     //Holds the value to load to the power register after waking from sleep
-char read_sensors, new_sensor_data;                     //Global flag indicating an accelerometer reading has been completed
+char read_sensors;                     //Global flag indicating an accelerometer reading has been completed
 char wake_event=0;
 
 //JFK ID's
-//unsigned char HRM[2] = { 0x89, 0x43 };
-//unsigned char CINQO[2] = { 0xf1, 0x2d};
-unsigned char HRM[2] = { 0x00, 0x00 };
-unsigned char CINQO[2] = { 0x00, 0x00};
+unsigned char HRM[2] = { 0x89, 0x43 };
+unsigned char CINQO[2] = { 0xf1, 0x2d};
+//unsigned char HRM[2] = { 0x00, 0x00 };
+//unsigned char CINQO[2] = { 0x00, 0x00};
 
 
 int main (void)
@@ -157,18 +158,18 @@ int main (void)
 
     //SHT15 shouldn't need to be initialized(it just needs power)
 
+    VICIntEnable |=  UART1_INT | TIMER0_INT; //Enable UART1 and Timer0 Interrupts
     flashBoobies(5);
-    VICIntEnable |= UART0_INT | UART1_INT; // | TIMER0_INT; //Enable UART1 and Timer0 Interrupts
     while(TRUE)
     {
         if(gps_message_complete==1)
         {   //If we've received a new GPS message, record it.
             //Populate GPS struct with time, position, fix, date
             //If we received a valid RMC message, log it to the NMEA file
-            VICIntEnClr |= UART1_INT;
-            if(parseRMC(gps_message))
+            //printDebug(gps_message, gps_message_size);
+  	    VICIntEnClr |= TIMER0_INT | UART1_INT;
+	    if(parseRMC(gps_message))
             {
-                //printDebug(gps_message, gps_message_size);        
                 //Copy over into safeGPS, the data is valid.
                 for(int i = 0; i < 9; i++)
                     safeGPS.Latitude.position[i] = GPS.Latitude.position[i];
@@ -185,22 +186,20 @@ int main (void)
                 for(int i=0; i<10; i++)
                     safeGPS.Time[i] = GPS.Time[i];
 
-                //printDebug("GPS Time: ",10);
-                //printDebug(safeGPS.Time, 10);
-                //printDebug('\n', 1);
-
                 if(wroteGPS == FALSE)
-                {
+		{
+		    
+                    VICIntEnable |= UART0_INT; //Enable ANT+ 
                     ANTAP1_Config();
                     wroteGPS = TRUE;
                 }
             }
-            VICIntEnable |= UART1_INT;
-
+            VICIntEnable |= TIMER0_INT | UART1_INT;
         }
+
         if(ant_message_complete == TRUE)
         {
-            VICIntEnClr |= UART0_INT;
+            VICIntEnClr |= TIMER0_INT | UART0_INT | UART1_INT;
             for(int i=0; i< ant_message_index; i++)
             {
                 log_data[log_data_index++]=ant_message[i];
@@ -209,16 +208,16 @@ int main (void)
             }
             ant_message_index=0;
 
-            VICIntEnable |= UART0_INT;
+            VICIntEnable |= TIMER0_INT | UART0_INT | UART1_INT;
         }
 
         //Only Save Data if the buffer is full! This saves write cycles to the SD card
         if(log_data_index >= MAX_BUFFER_SIZE)
         {
-            VICIntEnClr |= UART0_INT | UART1_INT;
+            VICIntEnClr |= TIMER0_INT | UART0_INT | UART1_INT;
             UnselectSCP();
             saveData(&LOG_FILE, log_data, log_data_index);
-            VICIntEnable |= UART0_INT | UART1_INT;
+            VICIntEnable |= TIMER0_INT | UART0_INT | UART1_INT;
             SelectSCP();
             unselect_card();
             SCPinit();
@@ -226,7 +225,6 @@ int main (void)
             for(int i=0; i<log_data_index; i++)log_data[i]='\0';
             log_data_index=0;
             new_gps_data=0; //We've saved the GPS coordinates, so clear the GPS data flag
-            new_sensor_data=0;      //We've save the accel values, so clear the accel flag
         }
     }
     return 0;
@@ -306,7 +304,7 @@ void bootUp(void)
     VICVectCntl0 = 0x20 | 6;                                                //Set up the UART1 interrupt
     VICVectAddr0 = (unsigned int)ISR_RxData0;
     VICVectCntl1 = 0x20 | 13;                                               //Set up the RTC interrupt
-    VICVectAddr1 = (unsigned int)ISR_RTC;
+    //VICVectAddr1 = (unsigned int)ISR_RTC;
     //    VICVectCntl2 = 0x20 | 4;                                                //Timer 0 Interrupt
     //    VICVectAddr2 = (unsigned int)ISR_Timer0;
     VICVectCntl3 = 0x20 | 16;                                               //EINT2 External Interrupt
@@ -323,11 +321,13 @@ void bootUp(void)
     U0FCR &= 0x3F;                          //Enable FIFO, set RDA interrupt for 1 character
 
     //Setupt the Timer0 Interrupt
+    /*
     T0PR = 1200;                            //Divide Clock(60MHz) by 1200 for 50kHz PS
     T0TCR |=0X01;                           //Enable the clock
     T0CTCR=0;                                       //Timer Mode
     T0MCR=0x0003;                           //Interrupt and Reset Timer on Match
     T0MR0=(50000/TIMER_FREQ);       //Set Interrupt frequency by dividing system clock (50KHz) by TIMER_FREQ (defined in PackageTracker.h as 10)
+    */
     //Value will result in Timer 0 interrupts at TIMER_FREQ
 
     //Set up the RTC so it can be used for sleeping
@@ -366,6 +366,7 @@ static void ISR_RxData0(void)
 
         ant_message[ant_message_index++] = 0x0A;
     }
+
     VICVectAddr =0;                                         //Update the VIC priorities
 }
 
@@ -375,7 +376,7 @@ static void ISR_RxData0(void)
 static void ISR_RxData1(void)
 {
     char val = (char)U1RBR;
-    
+
     //When we get a character on UART1, save it to the GPS message buffer
     if(val=='\n'){  //Newline means the current message is complete
         gps_message[gps_message_index]= val;
@@ -385,13 +386,14 @@ static void ISR_RxData1(void)
     }
     else{
         //If we get the start character, reset the index
+        gps_message_complete=0;
         if(val == '$')gps_message_index=0;
         gps_message[gps_message_index++]= val;
-        gps_message_complete=0;
     }
     VICVectAddr =0;                                         //Update the VIC priorities
 }
 
+/*
 //Usage: None (Automatically Called by FW)
 //Inputs: None
 //Description: Called when the RTC alarm goes off.  This wakes
@@ -404,6 +406,7 @@ static void ISR_RTC(void)
     VICVectAddr =0;         //Update the VIC priorities
 }
 
+*/
 //Usage: createLogFile();
 //Inputs: None
 //Outputs: None
