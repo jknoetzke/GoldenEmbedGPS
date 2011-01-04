@@ -42,7 +42,6 @@
 #define netNum    0x00    // NetNum
 #define DEVTYPE_HRM	0x78	/* ANT+ HRM */
 #define DEVTYPE_BIKE	0x79	/* ANT+ Bike speed and cadence */
-//#define DEVTYPE_FOOT	0x7c	/* ANT+ Foot pod */
 #define DEVTYPE_PWR	0x0b	/* ANT+ Power meter */
 
 #define DEVPERIOD_HRM	0x86	/* ANT+ HRM */
@@ -62,14 +61,11 @@ int isBroadCast = FALSE;
 void bootUp(void);
 static void ISR_RxData0(void);
 static void ISR_RxData1(void);
-//static void ISR_RTC(void);
-//static void ISR_EINT2(void);
 void createLogFile(void);
 int parseRMC(const char *gps_string);
 void saveData(struct fat16_file_struct **fd, const char * const buf, const int buf_size);
 void itoa(int n, char s[]);
 void reverse(char s[]);
-int get_adc_1(char channel);
 void reset(void);
 void initializeGps(void);
 
@@ -100,21 +96,8 @@ int gps_message_index=0, gps_message_size=0, ant_message_index=0, ant_message_si
 int final_gps_message_size=0;
 GPSdata GPS, safeGPS;    //GPS Struct to hold GPS coordinates.  See PackageTracker.h for Structure definition
 
-//Pressure Sensor (SCP100) Values
-unsigned int scp_pressure;
-int scp_temp;
-char new_scp_data;
-
-//Humidity Sensor (SHT15) Values
-unsigned int sht_temp, sht_humidity;
-char new_sht_data;
-
-//Accelerometer (ADXL345) Values
-signed int acceleration_x, acceleration_y, acceleration_z;
-
 //Logging Parameters
 char file_name[32];
-int battery_level;
 int log_count;  //Keeps track of how many logs we've made since we've been awake.  Get's reset before going to sleep.
 
 //Log Parameters for logging the Sensor Data
@@ -124,24 +107,11 @@ int log_data_index = 0;     //Keeps track of current position in log_data
 
 char wroteGPS = FALSE;
 
-//Log Parameters for logging the NMEA file
-//struct fat16_file_struct * NMEA_FILE; //File structure for current log file
-//char nmea_data[1024];//
-//int nmea_data_index=0;
-
 char led_blink=0;
 
-//Sleep Parameters
-unsigned int power_register_values;                     //Holds the value to load to the power register after waking from sleep
-char read_sensors;                     //Global flag indicating an accelerometer reading has been completed
-char wake_event=0;
-
 //JFK ID's
-unsigned char HRM[2] = { 0x89, 0x43 };
+unsigned char HRM[2] = { 0x79, 0x94 };
 unsigned char CINQO[2] = { 0xf1, 0x2d};
-//unsigned char HRM[2] = { 0x00, 0x00 };
-//unsigned char CINQO[2] = { 0x00, 0x00};
-
 
 int main (void)
 {
@@ -156,8 +126,6 @@ int main (void)
     initializeGps();                //Send the initialization strings
     enable_gps_rmc_msgs(1);
 
-    //SHT15 shouldn't need to be initialized(it just needs power)
-
     VICIntEnable |=  UART1_INT;// | TIMER0_INT; //Enable UART1 and Timer0 Interrupts
     flashBoobies(5);
 
@@ -169,10 +137,13 @@ int main (void)
             //If we received a valid RMC message, log it to the NMEA file
             //printDebug(gps_message, gps_message_size);
   	    //VICIntEnClr |= TIMER0_INT | UART1_INT;
-  	    VICIntEnClr |= UART1_INT;
+  	
+	    VICIntEnClr |= UART1_INT;
 	    if(parseRMC(gps_message))
             {
-                printDebug(gps_message, gps_message_size);
+		//printDebug("Out ParseRMC\n", 13);
+		gps_message_complete = FALSE;
+                
 		 //Copy over into safeGPS, the data is valid.
                 for(int i = 0; i < 9; i++)
                     safeGPS.Latitude.position[i] = GPS.Latitude.position[i];
@@ -197,14 +168,12 @@ int main (void)
                     wroteGPS = TRUE;
                 }
             }
-            //VICIntEnable |= TIMER0_INT | UART1_INT;
             VICIntEnable |= UART1_INT;
-        }
+	}
 
         if(ant_message_complete == TRUE)
         {
-            //VICIntEnClr |= TIMER0_INT | UART0_INT | UART1_INT;
-            VICIntEnClr |= UART0_INT | UART1_INT;
+	    VICIntEnClr |= UART0_INT | UART1_INT;
             for(int i=0; i< ant_message_index; i++)
             {
                 log_data[log_data_index++]=ant_message[i];
@@ -213,18 +182,15 @@ int main (void)
             }
             ant_message_index=0;
 
-            //VICIntEnable |= TIMER0_INT | UART0_INT | UART1_INT;
             VICIntEnable |= UART0_INT | UART1_INT;
         }
 
         //Only Save Data if the buffer is full! This saves write cycles to the SD card
         if(log_data_index >= MAX_BUFFER_SIZE)
         {
-            //VICIntEnClr |= TIMER0_INT | UART0_INT | UART1_INT;
             VICIntEnClr |= UART0_INT | UART1_INT;
             UnselectSCP();
             saveData(&LOG_FILE, log_data, log_data_index);
-            //VICIntEnable |= TIMER0_INT | UART0_INT | UART1_INT;
             VICIntEnable |= UART0_INT | UART1_INT;
             SelectSCP();
             unselect_card();
@@ -266,32 +232,12 @@ void bootUp(void)
     //Bring up SD and FAT
     if(!sd_raw_init())
     {
-        //rprintf("SD Init Error\n");
         reset();
     }
     if(openroot())
     {
-        //rprintf("SD OpenRoot Error\n");
         reset();
     }
-    //PINSEL0 &= ~((3<<4)|(3<<6));
-
-    //Enable AD conversion on P0.13(AD1.4) FOR BATT_MEAS
-    //PINSEL0 |= (3<<26);
-
-    //Set up the EINT2 External Interrupt Functionality
-    //PINSEL0 &= ~(3<<30);    //Clear P0.15 special function
-    //PINSEL0 |= (2<<30);     //Set P0.15 to EINT2
-    
-    /*
-    VICIntEnClr |= EINT2_INT;//Make sure EINT2 interrupts are disabled
-    EXTINT |= (1<<2);               //Clear the EINT2 Interrupt bit
-    EXTMODE |= (1<<2);              //Set EINT2 to be edge sensitive
-    EXTINT |= (1<<2);               //Clear the EINT2 Interrupt bit
-    EXTPOLAR |= (1<<2);     //Set EINT2 to detect rising edges
-    INTWAKE |= (1<<2);              //ARM will wake up from power down on an EINT2 interrupt
-    EXTINT |= (1<<2);               //Clear the EINT2 Interrupt bit
-    */
     
     //Initialize I/O Ports and Peripherals
     IODIR0 = SCLK | MOSI | SD_CS | ACCEL_CS | GPS_EN | I2C_SCL | LED;
@@ -315,12 +261,6 @@ void bootUp(void)
     VICIntSelect = ~(UART0_INT | UART1_INT);
     VICVectCntl0 = 0x20 | 6;                                                //Set up the UART1 interrupt
     VICVectAddr0 = (unsigned int)ISR_RxData0;
-    VICVectCntl1 = 0x20 | 13;                                               //Set up the RTC interrupt
-    //VICVectAddr1 = (unsigned int)ISR_RTC;
-    //    VICVectCntl2 = 0x20 | 4;                                                //Timer 0 Interrupt
-    //    VICVectAddr2 = (unsigned int)ISR_Timer0;
-    //VICVectCntl3 = 0x20 | 16;                                               //EINT2 External Interrupt
-    //VICVectAddr3 = (unsigned int)ISR_EINT2;
     VICVectCntl4 = 0x20 | 7;                                                //Set up the UART0 interrupt
     VICVectAddr4 = (unsigned int)ISR_RxData1;
 
@@ -332,22 +272,11 @@ void bootUp(void)
     U0IER = 0x01;                           //Enable FIFO on UART with RDA interrupt (Receive Data Available)
     U0FCR &= 0x3F;                          //Enable FIFO, set RDA interrupt for 1 character
 
-    //Setupt the Timer0 Interrupt
-    /*
-    T0PR = 1200;                            //Divide Clock(60MHz) by 1200 for 50kHz PS
-    T0TCR |=0X01;                           //Enable the clock
-    T0CTCR=0;                                       //Timer Mode
-    T0MCR=0x0003;                           //Interrupt and Reset Timer on Match
-    T0MR0=(50000/TIMER_FREQ);       //Set Interrupt frequency by dividing system clock (50KHz) by TIMER_FREQ (defined in PackageTracker.h as 10)
-    */
-    //Value will result in Timer 0 interrupts at TIMER_FREQ
-
     //Set up the RTC so it can be used for sleeping
-    /*
     CCR = ~(1<<0);                          //use the system clock, and disable RTC for now
     CIIR = 0;                                       //Don't allow any increment interrupts
-    AMR = ~(1<<1);                          //Only check the minutes value of the alarm
-    */
+   // AMR = ~(1<<1);                          //Only check the minutes value of the alarm
+    AMR = ~0;                          //Only check the minutes value of the alarm
     //Set up prescaler so RTC runs at 32.768 Khz
     PREINT = 1830;                          //Prescale Integer = (60MHz/32768)-1
     PREFRAC = 1792;                         //Prescale Fraction = 60MHz - ((PREINT+1)*32768)
@@ -404,23 +333,10 @@ static void ISR_RxData1(void)
         if(val == '$')gps_message_index=0;
         gps_message[gps_message_index++]= val;
     }
+
     VICVectAddr =0;                                         //Update the VIC priorities
 }
 
-/*
-//Usage: None (Automatically Called by FW)
-//Inputs: None
-//Description: Called when the RTC alarm goes off.  This wakes
-//                              the Package Tracker from sleep mode.
-static void ISR_RTC(void)
-{
-    //Clear the Alarm Interrupt bit from the ILR
-    ILR = ((1<<1)|(1<<0));
-    wake_event=RTC_TIMEOUT_WAKE;
-    VICVectAddr =0;         //Update the VIC priorities
-}
-
-*/
 //Usage: createLogFile();
 //Inputs: None
 //Outputs: None
@@ -437,9 +353,8 @@ void createLogFile(void){
     while(root_file_exists(file_name))
     {
         file_number++;  //If the file already exists, increment the file number and check again.
-        if(file_number == 1)
+        if(file_number == 25)
         {
-            printDebug("\nReset!!",8);
 	    reset();
         }
         sprintf(file_name, "ANTGPS%03d.gep", file_number);
@@ -617,29 +532,6 @@ void reverse(char s[])
     }
 }
 
-//Usage: accel = get_adc_1(CHANNEL);
-//Inputs: int channel - integer corresponding to the ADC channel to be converted
-//Outputs: None
-//Description: Returns the raw analog to digital conversion of the input channel.
-int get_adc_1(char channel)
-{
-    int val;
-    AD1CR = 0;
-    AD1GDR = 0;
-
-    //AD1CR = 0x00200600 | channel;
-    AD1CR = 0x00200E00 | channel;
-    AD1CR |= 0x01000000;
-    do
-    {
-        val = AD1GDR;                   // Read A/D Data Register
-    }
-    while ((val & 0x80000000) == 0);  //Wait for the conversion to complete
-    val = ((val >> 6) & 0x03FF);  //Extract the A/D result
-
-    return val;
-}
-
 //Usage: reset();
 //Inputs: None
 //Description: Resets the LPC2148
@@ -652,18 +544,6 @@ void reset(void)
         delay_ms(100);
     }
 }
-
-/*
-static void ISR_EINT2(void){
-    VICIntEnClr = (1<<16);                  //Temporarily disable EINT2 Interrupts
-    EXTINT |= (1<<2);                               //Clear the interrupt bit in EINT2
-
-    wake_event=ACCELEROMETER_WAKE;                  //Tell the main code that a free-fall has been detected!
-
-    VICIntEnable = (1<<16);         //Re-enable the EINT2 Interrupts
-    VICVectAddr =0;         //Update the VIC priorities
-}
-*/
 
 void initializeGps(void){
     //Initialize the GPS receiver
@@ -942,3 +822,4 @@ void printDebug(char *debug, int _size)
         putc_serial0(debug[i]);
     }
 }
+
