@@ -274,14 +274,14 @@ void bootUp(void)
         //rprintf("SD OpenRoot Error\n");
         reset();
     }
-    PINSEL0 &= ~((3<<4)|(3<<6));
+    //PINSEL0 &= ~((3<<4)|(3<<6));
 
     //Enable AD conversion on P0.13(AD1.4) FOR BATT_MEAS
-    PINSEL0 |= (3<<26);
+    //PINSEL0 |= (3<<26);
 
     //Set up the EINT2 External Interrupt Functionality
-    PINSEL0 &= ~(3<<30);    //Clear P0.15 special function
-    PINSEL0 |= (2<<30);     //Set P0.15 to EINT2
+    //PINSEL0 &= ~(3<<30);    //Clear P0.15 special function
+    //PINSEL0 |= (2<<30);     //Set P0.15 to EINT2
     
     /*
     VICIntEnClr |= EINT2_INT;//Make sure EINT2 interrupts are disabled
