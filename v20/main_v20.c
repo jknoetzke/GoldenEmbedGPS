@@ -1,3 +1,22 @@
+/*
+ * Copyright (c) 2011 Justin F. Knotzke (jknotzke@shampoo.ca)
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation; either version 2 of the License, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc., 51
+ * Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+*/
+
+
 //*******************************************************
 //                 Package Tracker Firmware
 //*******************************************************
@@ -26,12 +45,8 @@
 #include "SHT15.h"
 #include "gps.h"
 
-//*******************************************************
-//                  Core Functions
-//*******************************************************
-
 //*******************************
-//   ANT+ Defines
+//       ANT+ Defines
 //*******************************
 #define MESG_NETWORK_KEY_ID      0x46
 #define MESG_TX_SYNC 0xA4
@@ -43,10 +58,7 @@
 #define DEVTYPE_HRM	0x78	/* ANT+ HRM */
 #define DEVTYPE_BIKE	0x79	/* ANT+ Bike speed and cadence */
 #define DEVTYPE_PWR	0x0b	/* ANT+ Power meter */
-
 #define DEVPERIOD_HRM	0x86	/* ANT+ HRM */
-#define DEVPERIOD_BIKE	0x96	/* ANT+ Bike speed and cadence */
-//#define DEVPERIOD_FOOT	0xc6	/* ANT+ Foot pod */
 #define DEVPERIOD_PWR	0xf6	/* ANT+ Power meter */
 
 #define FALSE 0
@@ -57,6 +69,11 @@ int msgN = 0;
 int size = 0;
 int currentChannel=0;
 int isBroadCast = FALSE;
+
+//*******************************************************
+//                  Core Functions
+//*******************************************************
+
 
 void bootUp(void);
 static void ISR_RxData0(void);
@@ -123,21 +140,17 @@ int main (void)
     createLogFile();        //Create a new log file in the root of the SD card
 
     //Initialize the GPS
-    initializeGps();                //Send the initialization strings
+    initializeGps();           //Send the initialization strings
     enable_gps_rmc_msgs(1);
 
-    VICIntEnable |=  UART1_INT;// | TIMER0_INT; //Enable UART1 and Timer0 Interrupts
-    flashBoobies(5);
+    VICIntEnable |=  UART1_INT; //Enable UART1 Interrupt
+    flashBoobies(5); //We are alive !
 
     while(TRUE)
     {
         if(gps_message_complete==1)
         {   //If we've received a new GPS message, record it.
-            //Populate GPS struct with time, position, fix, date
-            //If we received a valid RMC message, log it to the NMEA file
-            //printDebug(gps_message, gps_message_size);
-  	    //VICIntEnClr |= TIMER0_INT | UART1_INT;
-  	
+            //Populate GPS struct with time, position, date, speed
 	    VICIntEnClr |= UART1_INT;
 	    if(parseRMC(gps_message))
             {
@@ -221,7 +234,6 @@ void delay_ms(int count)
 //This function initializes the serial port, the SD card, the I/O pins and the interrupts
 void bootUp(void)
 {
-
     //Initialize UART for RPRINTF
     rprintf_devopen(putc_serial1); //Init rprintf
     init_serial1(4800);
@@ -257,7 +269,6 @@ void bootUp(void)
     //Setup the Interrupts
     //Enable Interrupts
     VPBDIV=1;                                                                               // Set PCLK equal to the System Clock
-    //VICIntSelect = ~(UART0_INT | UART1_INT | TIMER0_INT | RTC_INT | EINT2_INT);
     VICIntSelect = ~(UART0_INT | UART1_INT);
     VICVectCntl0 = 0x20 | 6;                                                //Set up the UART1 interrupt
     VICVectAddr0 = (unsigned int)ISR_RxData0;
@@ -275,7 +286,6 @@ void bootUp(void)
     //Set up the RTC so it can be used for sleeping
     CCR = ~(1<<0);                          //use the system clock, and disable RTC for now
     CIIR = 0;                                       //Don't allow any increment interrupts
-   // AMR = ~(1<<1);                          //Only check the minutes value of the alarm
     AMR = ~0;                          //Only check the minutes value of the alarm
     //Set up prescaler so RTC runs at 32.768 Khz
     PREINT = 1830;                          //Prescale Integer = (60MHz/32768)-1
@@ -537,7 +547,6 @@ void reverse(char s[])
 //Description: Resets the LPC2148
 void reset(void)
 {
-
     while(1)
     {
         flashBoobies(1);
