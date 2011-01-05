@@ -286,7 +286,7 @@ void bootUp(void)
     //Set up the RTC so it can be used for sleeping
     CCR = ~(1<<0);                          //use the system clock, and disable RTC for now
     CIIR = 0;                                       //Don't allow any increment interrupts
-    AMR = ~0;                          //Only check the minutes value of the alarm
+    AMR = ~0;                          //Don't check the minutes value of the alarm
     //Set up prescaler so RTC runs at 32.768 Khz
     PREINT = 1830;                          //Prescale Integer = (60MHz/32768)-1
     PREFRAC = 1792;                         //Prescale Fraction = 60MHz - ((PREINT+1)*32768)
