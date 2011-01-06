@@ -69,6 +69,7 @@ int msgN = 0;
 int size = 0;
 int currentChannel=0;
 int isBroadCast = FALSE;
+int skip_gps = FALSE;
 
 //*******************************************************
 //                  Core Functions
@@ -106,7 +107,7 @@ void printDebug(char *debug, int _size);
 //*******************************************************
 
 //GPS variables
-char gps_message_complete=0, new_gps_data=0, RTC_Set=0, alarm_set,ant_message_complete=FALSE;        //Notification Flags
+char gps_message_complete=0, new_gps_data=0, ant_message_complete=FALSE;        //Notification Flags
 char gps_message[GPS_BUFFER_SIZE]; 
 unsigned char ant_message[GPS_BUFFER_SIZE];      //Buffers for holding GPS messages
 int gps_message_index=0, gps_message_size=0, ant_message_index=0, ant_message_size=0;    //index for copying messages to different buffers
@@ -175,7 +176,13 @@ int main (void)
 
                 if(wroteGPS == FALSE)
 		{
-		    
+                    CCR = (1<<1); //Disable and Reset the RTC
+                    HOUR = ((GPS.Time[0]-'0')*10) + (GPS.Time[1]-'0');
+                    MIN = ((GPS.Time[2]-'0')*10) + (GPS.Time[3]-'0');
+                    SEC = ((GPS.Time[4]-'0')*10) + (GPS.Time[5] -'0');	
+                    CCR = (1<<0); //Start the RTC
+
+
                     VICIntEnable |= UART0_INT; //Enable ANT+ 
                     ANTAP1_Config();
                     wroteGPS = TRUE;
@@ -269,7 +276,7 @@ void bootUp(void)
     //Setup the Interrupts
     //Enable Interrupts
     VPBDIV=1;                                                                               // Set PCLK equal to the System Clock
-    VICIntSelect = ~(UART0_INT | UART1_INT);
+    VICIntSelect = ~(UART0_INT | UART1_INT | RTC_INT);
     VICVectCntl0 = 0x20 | 6;                                                //Set up the UART1 interrupt
     VICVectAddr0 = (unsigned int)ISR_RxData0;
     VICVectCntl4 = 0x20 | 7;                                                //Set up the UART0 interrupt
@@ -314,10 +321,9 @@ static void ISR_RxData0(void)
         for(int i=0; i<6; i++)
             ant_message[ant_message_index++]=safeGPS.Date[i];
 
-        for(int i=0; i<10; i++)
-            ant_message[ant_message_index++]=safeGPS.Time[i];
-
-        ant_message[ant_message_index++] = 0x0A;
+        ant_message[ant_message_index++]=HOUR;
+        ant_message[ant_message_index++]=MIN;
+        ant_message[ant_message_index++]=SEC;
     }
 
     VICVectAddr =0;                                         //Update the VIC priorities
@@ -333,8 +339,15 @@ static void ISR_RxData1(void)
     //When we get a character on UART1, save it to the GPS message buffer
     if(val=='\n'){  //Newline means the current message is complete
         gps_message[gps_message_index]= val;
-        gps_message_complete=1;                                 //Set a flag for the main FW
-        gps_message_size=gps_message_index+1;
+        if(skip_gps == FALSE)
+	{
+	    skip_gps = TRUE;
+	    gps_message_complete=1;  //Set a flag for the main FW
+	}
+	else
+            skip_gps = FALSE;
+
+	    gps_message_size=gps_message_index+1;
         gps_message_index=0;
     }
     else{
