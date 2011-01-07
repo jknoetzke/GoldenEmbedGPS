@@ -177,11 +177,16 @@ int main (void)
                 if(wroteGPS == FALSE)
 		{
                     CCR = (1<<1); //Disable and Reset the RTC
-                    HOUR = ((GPS.Time[0]-'0')*10) + (GPS.Time[1]-'0');
+                  
+		    HOUR = ((GPS.Time[0]-'0')*10) + (GPS.Time[1]-'0');
                     MIN = ((GPS.Time[2]-'0')*10) + (GPS.Time[3]-'0');
                     SEC = ((GPS.Time[4]-'0')*10) + (GPS.Time[5] -'0');	
-                    CCR = (1<<0); //Start the RTC
-
+                    
+		    DOM = ((GPS.Date[0]-'0')*10) + (GPS.Date[1]-'0');
+                    MONTH = ((GPS.Date[2]-'0')*10) + (GPS.Date[3]-'0');
+		    YEAR= ((GPS.Date[4]-'0')*10) + (GPS.Date[5]-'0');
+		   
+		    CCR = (1<<0); //Start the RTC
 
                     VICIntEnable |= UART0_INT; //Enable ANT+ 
                     ANTAP1_Config();
@@ -317,10 +322,11 @@ static void ISR_RxData0(void)
 
         for(int i = 0; i < 4; i++)
             ant_message[ant_message_index++]=safeGPS.Speed[i];
-
-        for(int i=0; i<6; i++)
-            ant_message[ant_message_index++]=safeGPS.Date[i];
-
+        
+	ant_message[ant_message_index++]=YEAR;
+        ant_message[ant_message_index++]=MONTH;
+        ant_message[ant_message_index++]=DOM;
+ 
         ant_message[ant_message_index++]=HOUR;
         ant_message[ant_message_index++]=MIN;
         ant_message[ant_message_index++]=SEC;
