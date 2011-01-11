@@ -168,12 +168,6 @@ int main (void)
                 for(int i = 0; i < 4; i++)
                     safeGPS.Speed[i] = GPS.Speed[i];
 
-                for(int i=0; i<6; i++)
-                    safeGPS.Date[i] = GPS.Date[i];
-
-                for(int i=0; i<10; i++)
-                    safeGPS.Time[i] = GPS.Time[i];
-
                 if(wroteGPS == FALSE)
 		{
                     CCR = (1<<1); //Disable and Reset the RTC
