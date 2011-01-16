@@ -69,7 +69,6 @@ int msgN = 0;
 int size = 0;
 int currentChannel=0;
 int isBroadCast = FALSE;
-int skip_gps = FALSE;
 
 //*******************************************************
 //                  Core Functions
@@ -120,7 +119,7 @@ int log_count;  //Keeps track of how many logs we've made since we've been awake
 
 //Log Parameters for logging the Sensor Data
 struct fat16_file_struct * LOG_FILE; //File structure for current log file
-char log_data[1024];//log_buffer holds data before putting it into log_data
+char log_data[512];//log_buffer holds data before putting it into log_data
 int log_data_index = 0;     //Keeps track of current position in log_data
 
 char wroteGPS = FALSE;
@@ -339,14 +338,9 @@ static void ISR_RxData1(void)
     //When we get a character on UART1, save it to the GPS message buffer
     if(val=='\n'){  //Newline means the current message is complete
         gps_message[gps_message_index]= val;
-        if(skip_gps == FALSE)
-	{
-	    skip_gps = TRUE;
+        if(SEC % 4)
 	    gps_message_complete=1;  //Set a flag for the main FW
-	}
 	else
-            skip_gps = FALSE;
-
 	    gps_message_size=gps_message_index+1;
         gps_message_index=0;
     }
