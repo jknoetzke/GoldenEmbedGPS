@@ -207,17 +207,19 @@ int main (void)
         if(log_data_index >= MAX_BUFFER_SIZE)
         {
             VICIntEnClr |= UART0_INT | UART1_INT;
-            UnselectSCP();
+            //UnselectSCP();
             saveData(&LOG_FILE, log_data, log_data_index);
             VICIntEnable |= UART0_INT | UART1_INT;
-            SelectSCP();
+            //SelectSCP();
             unselect_card();
-            SCPinit();
+            //SCPinit();
             delay_ms(10);
             for(int i=0; i<log_data_index; i++)log_data[i]='\0';
             log_data_index=0;
             new_gps_data=0; //We've saved the GPS coordinates, so clear the GPS data flag
-        }
+            gps_message_complete = FALSE;
+	    ant_message_complete = FALSE;
+	}
     }
     return 0;
 }
@@ -339,7 +341,7 @@ static void ISR_RxData1(void)
     if(val=='\n'){  //Newline means the current message is complete
         gps_message[gps_message_index]= val;
         if(SEC % 4)
-	    gps_message_complete=1;  //Set a flag for the main FW
+	    gps_message_complete=TRUE;  //Set a flag for the main FW
 	else
 	    gps_message_size=gps_message_index+1;
         gps_message_index=0;
