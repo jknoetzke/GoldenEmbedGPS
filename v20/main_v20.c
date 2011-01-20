@@ -119,7 +119,7 @@ int log_count;  //Keeps track of how many logs we've made since we've been awake
 
 //Log Parameters for logging the Sensor Data
 struct fat16_file_struct * LOG_FILE; //File structure for current log file
-char log_data[512];//log_buffer holds data before putting it into log_data
+char log_data[1024];//log_buffer holds data before putting it into log_data
 int log_data_index = 0;     //Keeps track of current position in log_data
 
 char wroteGPS = FALSE;
@@ -259,14 +259,15 @@ void bootUp(void)
     }
     
     //Initialize I/O Ports and Peripherals
-    IODIR0 = SCLK | MOSI | SD_CS | ACCEL_CS | GPS_EN | I2C_SCL | LED;
-    IODIR0 &= ~(MISO | SCP_DRDY | ACCEL_INT2 | ACCEL_INT1 | BATT_MEAS);
+   // IODIR0 = SCLK | MOSI | SD_CS | ACCEL_CS | GPS_EN | I2C_SCL | LED;
+    IODIR0 = SD_CS | GPS_EN | LED;
+    //IODIR0 &= ~(MISO | SCP_DRDY | ACCEL_INT2 | ACCEL_INT1 | BATT_MEAS);
 
-    IODIR1 = SCP_EN | SCP_CS;
+    //IODIR1 = SCP_EN | SCP_CS;
 
     //Make sure peripheral devices are not selected
-    UnselectAccelerometer();
-    UnselectSCP();
+    //UnselectAccelerometer();
+    //UnselectSCP();
 
     //Initialize the SPI bus
     SPI0_Init();                    //Select pin functions for SPI signals.
@@ -276,7 +277,7 @@ void bootUp(void)
     //Setup the Interrupts
     //Enable Interrupts
     VPBDIV=1;                                                                               // Set PCLK equal to the System Clock
-    VICIntSelect = ~(UART0_INT | UART1_INT | RTC_INT);
+    VICIntSelect = ~(UART0_INT | UART1_INT);
     VICVectCntl0 = 0x20 | 6;                                                //Set up the UART1 interrupt
     VICVectAddr0 = (unsigned int)ISR_RxData0;
     VICVectCntl4 = 0x20 | 7;                                                //Set up the UART0 interrupt
@@ -340,10 +341,8 @@ static void ISR_RxData1(void)
     //When we get a character on UART1, save it to the GPS message buffer
     if(val=='\n'){  //Newline means the current message is complete
         gps_message[gps_message_index]= val;
-        if(SEC % 4)
-	    gps_message_complete=TRUE;  //Set a flag for the main FW
-	else
-	    gps_message_size=gps_message_index+1;
+	gps_message_complete=TRUE;  //Set a flag for the main FW
+	gps_message_size=gps_message_index+1;
         gps_message_index=0;
     }
     else{
