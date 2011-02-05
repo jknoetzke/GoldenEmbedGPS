@@ -119,7 +119,7 @@ int log_count;  //Keeps track of how many logs we've made since we've been awake
 
 //Log Parameters for logging the Sensor Data
 struct fat16_file_struct * LOG_FILE; //File structure for current log file
-char log_data[1024];//log_buffer holds data before putting it into log_data
+char log_data[LOG_BUFFER_SIZE];//log_buffer holds data before putting it into log_data
 int log_data_index = 0;     //Keeps track of current position in log_data
 
 char wroteGPS = FALSE;

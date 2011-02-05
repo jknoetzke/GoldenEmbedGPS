@@ -8,7 +8,7 @@
 //**********************************************************
 #include "LPC214x.h"
 #include "SCP1000.h"
-#include "SPI0.h"
+#include "spi0.h"
 #include "PackageTracker.h"
 #include "serial.h"
 #include "rprintf.h"
