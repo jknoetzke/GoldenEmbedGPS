@@ -8,7 +8,7 @@
 
 #define SCL_DELAY	1		//Delay to prevent reading the SCL sensor to fast
 #define	GPS_BUFFER_SIZE	80	//Size of buffer for GPS messages
-#define MAX_BUFFER_SIZE 800 
+#define MAX_BUFFER_SIZE 700 
 #define LOG_BUFFER_SIZE 1024
 #define OK	1
 #define ERROR	0
