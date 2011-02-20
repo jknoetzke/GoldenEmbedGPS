@@ -108,7 +108,7 @@ void printDebug(char *debug, int _size);
 //GPS variables
 char gps_message_complete=0, new_gps_data=0, ant_message_complete=FALSE;        //Notification Flags
 char gps_message[GPS_BUFFER_SIZE];
-unsigned char ant_message[GPS_BUFFER_SIZE];      //Buffers for holding GPS messages
+char ant_message[GPS_BUFFER_SIZE];      //Buffers for holding GPS messages
 int gps_message_index=0, gps_message_size=0, ant_message_index=0, ant_message_size=0;    //index for copying messages to different buffers
 int final_gps_message_size=0;
 GPSdata GPS, safeGPS;    //GPS Struct to hold GPS coordinates.  See PackageTracker.h for Structure definition
@@ -123,6 +123,12 @@ char log_data[LOG_BUFFER_SIZE];//log_buffer holds data before putting it into lo
 int log_data_index = 0;     //Keeps track of current position in log_data
 
 char wroteGPS = FALSE;
+
+//Pressure Sensor (SCP100) Values
+unsigned int scp_pressure = 0;
+int scp_temp;
+char new_scp_data;
+
 
 //JFK ID's
 unsigned char HRM[2] = { 0x79, 0x94 };
@@ -140,6 +146,11 @@ int main (void)
   //Initialize the GPS
   initializeGps();           //Send the initialization strings
   enable_gps_rmc_msgs(1);
+
+  //Initialize the sensors
+  SCPon(); //Turn on the SCP Sensor
+  delay_ms(100); //Allow SCP sensor to initialize
+  SCPinit(); //Initialize the SCP sensor
 
   VICIntEnable |=  UART1_INT; //Enable UART1 Interrupt
   flashBoobies(5); //We are alive !
@@ -197,6 +208,14 @@ int main (void)
 
     }
 
+    //If the SCP1000 has new data ready, then grab it!
+    if(IOPIN0 & SCP_DRDY){
+      unselect_card();
+      SelectSCP();
+      readSCP(&scp_pressure, &scp_temp);//Get temperature and pressure values from SCP1000
+      scp_pressure /=4;
+    }
+
     //Only Save Data if the buffer is full! This saves write cycles to the SD card
     if(log_data_index >= MAX_BUFFER_SIZE)
     {
@@ -249,6 +268,7 @@ void bootUp(void)
 
   //Initialize I/O Ports and Peripherals
   IODIR0 = SD_CS | GPS_EN | LED;
+  IODIR1 = SCP_EN | SCP_CS;	
 
   //Initialize the SPI bus
   SPI0_Init();                    //Select pin functions for SPI signals.
@@ -300,6 +320,8 @@ static void ISR_RxData0(void)
     for(int i = 0; i < 4; i++)
       ant_message[ant_message_index++]=safeGPS.Speed[i];
 
+
+    ant_message_index += (int) sprintf(ant_message+ant_message_index, "%d", scp_pressure);
     ant_message[ant_message_index++]=YEAR;
     ant_message[ant_message_index++]=MONTH;
     ant_message[ant_message_index++]=DOM;
