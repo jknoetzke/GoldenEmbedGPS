@@ -220,7 +220,9 @@ int main (void)
     if(log_data_index >= MAX_BUFFER_SIZE)
     {
       saveData(&LOG_FILE, log_data, log_data_index);
+      SelectSCP();
       unselect_card();
+      SCPinit();
       delay_ms(10);
       for(int i=0; i<log_data_index; i++)log_data[i]='\0';
       log_data_index=0;
@@ -265,15 +267,20 @@ void bootUp(void)
   {
     reset();
   }
-
   //Initialize I/O Ports and Peripherals
-  IODIR0 = SD_CS | GPS_EN | LED;
+  IODIR0 = SCLK | MOSI | SD_CS | ACCEL_CS | GPS_EN | I2C_SCL | LED;
+  IODIR0 &= ~(MISO | SCP_DRDY | ACCEL_INT2 | ACCEL_INT1 | BATT_MEAS);
+
   IODIR1 = SCP_EN | SCP_CS;	
 
+  //Make sure peripheral devices are not selected
+  UnselectAccelerometer();
+  UnselectSCP();
+
   //Initialize the SPI bus
-  SPI0_Init();                    //Select pin functions for SPI signals.
+  SPI0_Init();			//Select pin functions for SPI signals.
   S0SPCCR = 64;           // SCK = 1 MHz (60MHz / 64 ~= 1Mhz)
-  S0SPCR  = 0x20;         // Master, no interrupt enable, 8 bits
+  S0SPCR  = 0x20;         // Master, no interrupt enable, 8 bits	
 
   //Setup the Interrupts
   //Enable Interrupts
