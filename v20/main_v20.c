@@ -329,6 +329,7 @@ static void ISR_RxData0(void)
 
 
     ant_message_index += (int) sprintf(ant_message+ant_message_index, "%d", scp_pressure);
+    ant_message[ant_message_index++]=0x07;
     ant_message[ant_message_index++]=YEAR;
     ant_message[ant_message_index++]=MONTH;
     ant_message[ant_message_index++]=DOM;
