@@ -69,6 +69,8 @@ int msgN = 0;
 int size = 0;
 int currentChannel=0;
 int isBroadCast = FALSE;
+char msgResponseEvent = FALSE;
+char msgCheckHandler = FALSE;
 
 //*******************************************************
 //                  Core Functions
@@ -789,13 +791,16 @@ void ANTAP1_OpenCh (unsigned char chan)
     putc_serial0(setup[i]);
 
 }
+
 char parseANT(unsigned char chr)
 {
+
   if ((chr == MESG_TX_SYNC) && (inMsg == FALSE))
   {
-    msgN = 1; // Always reset msg count if we get a sync
+    msgN = 0; // Always reset msg count if we get a sync
     inMsg = TRUE;
     currentChannel=-1;
+    msgN++;
   }
   else if (msgN == 1)
   {
@@ -804,32 +809,48 @@ char parseANT(unsigned char chr)
   }
   else if(msgN == 2)
   {
-    if(chr == MESG_BROADCAST_DATA_ID)
-    {
+    if(chr == MESG_BROADCAST_DATA_ID) {
       isBroadCast = TRUE;
-    }
-    else
-    {
+    } else {
       isBroadCast = FALSE;
+    }
+    if(chr == MESG_RESPONSE_EVENT_ID) {
+        msgResponseEvent = TRUE;
     }
     msgN++;
   }
-  else if (msgN == 3)
-  {
+  else if (msgN == 3) {
     currentChannel=(int) chr; // this has to be 0x00,0x01,0x02,0x03 so okay?
     msgN++;
   }
   else if (msgN == (size + 3)) // sync, size, checksum
   {
+    //Write the time.
     inMsg = FALSE;
-    return TRUE; //We are at the end of the message
+    msgN = 0;
+    return 1; //We are at the end of the message
+  }
+  else if(msgN == 4 && msgResponseEvent == TRUE)
+  {
+    msgCheckHandler = TRUE;
+    msgN++; 
+  }
+  else if(msgN == 5 && msgCheckHandler == TRUE)
+  {
+    if(chr == 0x01) //Dropped Channel
+    {
+      flashBoobies(3);  //HR
+    }
+    msgCheckHandler = FALSE;
+    msgResponseEvent = FALSE;
+    msgN++;
   }
   else if(inMsg == TRUE)
   {
     msgN++;
   }
 
-  return FALSE;
+  return 0; 
 }
 
 void flashBoobies(int num_of_times)
